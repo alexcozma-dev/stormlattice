@@ -1,0 +1,20 @@
+# docker compose -f docker/compose.yaml up -d --build
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    env_file: ../.env
+    ports:
+      - "127.0.0.1:8000:8000"   # only nginx on the host can reach it
+    volumes:
+      - storm-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  storm-data:

@@ -1,0 +1,37 @@
+# StormLattice settings. Values marked "tune" are starting guesses to fit on validation days.
+
+grid:
+  # Florida box (degrees). Regridded to an equal-area grid at `resolution_km`.
+  lat_min: 24.5
+  lat_max: 31.0
+  lon_min: -87.5
+  lon_max: -80.0
+  resolution_km: 2.0
+  projection: "EPSG:5070"   # CONUS Albers equal-area
+
+cells:
+  reflectivity_threshold_dbz: 35   # tune: 35-40
+  min_area_km2: 4
+  track_max_distance_km: 15
+
+forecast:
+  lead_times_min: [10, 20, 30, 45, 60]
+  model_step_min: 10      # time step the birth/death models are trained on
+  lattice_step_min: 5
+  ensemble_members: 50
+
+lattice:
+  cold_pool_speed_ms: 7.0         # gravity-current front speed, tune
+  cold_pool_lifetime_min: 90      # tau_cp, tune
+  kappa2_per_min: 0.0             # 2-front collision trigger, fit (0 = off)
+  kappa3_per_min: 0.0             # 3-front collision trigger, fit (0 = off)
+
+risk:
+  buffer_km: 20                   # operator-adjustable
+  green_below: 0.10               # placeholder thresholds, operator sets these
+  red_above: 0.30
+  max_data_age_min: 10            # older radar -> advisory unavailable
+
+data:
+  mrms_bucket: "noaa-mrms-pds"
+  sevir_bucket: "sevir"

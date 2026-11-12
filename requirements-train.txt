@@ -1,0 +1,10 @@
+# Training, evaluation and exploration. Install on the laptop (P16), not the VM.
+-r requirements.txt
+
+h5py>=3.11            # SEVIR is stored as HDF5
+shap>=0.46            # explanation plots for the write-up
+geopandas>=1.0        # coastline and land-cover processing
+shapely>=2.0
+rasterio>=1.3         # NLCD and 3DEP rasters
+tqdm>=4.66
+jupyterlab>=4.2
