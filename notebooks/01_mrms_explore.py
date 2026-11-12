@@ -140,3 +140,37 @@ out_png = Path("data/latest.png")
 fig.savefig(out_png, dpi=150, bbox_inches="tight")
 print("saved:", out_png.resolve())
 plt.show()
+
+# %% Checkpoint E2: same map with coastlines, state lines and lakes
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
+
+data_crs = ccrs.PlateCarree() #the data's coordinates: plain lat/lon
+map_crs = ccrs.LambertConformal(central_longitude=-83.75,
+                                central_latitude=27.75) #how the map is drawn
+
+fig, ax = plt.subplots(figsize=(8, 7), subplot_kw={"projection": map_crs})
+ax.set_extent([lon_min, lon_max, lat_min, lat_max], crs=data_crs)
+
+#radar (transform= tells cartopy the data is in lat/lon)
+im = ax.pcolormesh(fl.longitude, fl.latitude, show, cmap="turbo",
+                   vmin=0, vmax=70, shading="auto", transform=data_crs)
+ax.pcolormesh(fl.longitude, fl.latitude, fl.isnull().where(fl.isnull()),
+              cmap="Greys", vmin=0, vmax=2, shading="auto", transform=data_crs)
+
+#geography (10m = most detailed natural earth data; downloads once, a few MB)
+ax.coastlines(resolution="10m", linewidth=0.6)
+ax.add_feature(cfeature.STATES.with_scale("10m"), linewidth=0.3, edgecolor="grey")
+ax.add_feature(cfeature.LAKES.with_scale("10m"), facecolor="none",
+               edgecolor="steelblue", linewidth=0.5)
+
+#lat/lon grid labels on the left and bottom only
+gl = ax.gridlines(draw_labels=True, x_inline=False, y_inline=False,
+                  rotate_labels=False, linewidth=0.2, color="grey")
+gl.top_labels = gl.right_labels = False
+
+fig.colorbar(im, ax=ax, label="Composite reflectivity (dBZ)", shrink=0.8)
+ax.set_title(f"MRMS composite reflectivity, {t:%Y-%m-%d %H:%M} UTC")
+
+fig.savefig(Path("data/latest_map.png"), dpi=150, bbox_inches="tight")
+plt.show()
