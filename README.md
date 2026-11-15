@@ -30,7 +30,7 @@ Live demo: https://storm.alexcozma.dev
 | 9 | `tests/`, `scripts/evaluate.py` | CSI, Brier skill, reliability, ablations vs. baselines | validation |
 | 10 | `stormlattice/api`, `web/` | FastAPI backend and map interface | app |
 
-Full design write-up: see `docs/architecture.md`.
+Full design write-up: see `docs/design.md`.
 
 ## Repository layout
 
