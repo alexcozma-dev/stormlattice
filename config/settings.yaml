@@ -1,33 +1,38 @@
 # StormLattice settings. Values marked "tune" are starting guesses to fit on validation days.
 
 grid:
-  # Florida box (degrees). Regridded to an equal-area grid at `resolution_km`.
+  # Florida box (degrees) on MRMS's own 0.01 deg lat/lon grid. No reprojection.
+  # Each span must be a whole number of 0.08 deg blocks: 6.48 deg = 81 blocks, 7.52 deg = 94.
   lat_min: 24.52
   lat_max: 31.0
   lon_min: -87.52
   lon_max: -80.0
-  resolution_km: 2.0
-  projection: "EPSG:5070"   # CONUS Albers equal-area
 
 archive:
-  max_frame_offset_min: 4   # a 10-minute slot with no frame this close is stored as all-NaN
+  cadence_min: 10                 # one slot per 10-minute mark
+  storm_day_start_hour_utc: 10    # a storm day runs 10:00 UTC to 10:00 UTC, named by its start date
+  max_frame_offset_min: 4         # a 10-minute slot with no frame this close is stored as all-NaN
 
-cells:
-  reflectivity_threshold_dbz: 35   # tune: 35-40
-  min_area_km2: 4
-  track_max_distance_km: 15
+storms:
+  threshold_dbz: 35               # tune: 35-40
+
+labels:
+  window_min: 10                  # a birth at lead L happens in [t0+L, t0+L+10 min]
+  min_cells: 4                    # storm cells needed in the block ...
+  persist_frames: 2               # ... for this many frames in a row
+  quiet_before_min: 20            # the block held no storm for this long before the window
+  # tune: equals headroom_distance_km so the headroom test measures the label ceiling;
+  # revisit after the label sanity check
+  advected_tolerance_km: 10
+
+checks:
+  headroom_distance_km: 10        # "new" storm area lies farther than this from the advected t0 storms
+  buffer_test_km: [5, 10, 20]     # route buffers to compare on observed radar
 
 forecast:
   lead_times_min: [10, 20, 30, 45, 60]
-  model_step_min: 10      # time step the birth/death models are trained on
   lattice_step_min: 5
-  ensemble_members: 50
-
-lattice:
-  cold_pool_speed_ms: 7.0         # gravity-current front speed, tune
-  cold_pool_lifetime_min: 90      # tau_cp, tune
-  kappa2_per_min: 0.0             # 2-front collision trigger, fit (0 = off)
-  kappa3_per_min: 0.0             # 3-front collision trigger, fit (0 = off)
+  ensemble_members: 200
 
 risk:
   buffer_km: 20                   # operator-adjustable
@@ -35,6 +40,11 @@ risk:
   red_above: 0.30
   max_data_age_min: 10            # older radar -> advisory unavailable
 
+route:
+  # Demo corridor: SunTrax (Auburndale) to Orlando International Airport.
+  suntrax_lonlat: null            # fill in: 100 Transformation Way, Auburndale
+  mco_lonlat: [-81.309, 28.413]   # from OpenStreetMap
+  cruise_speed_kmh: 241           # about 150 mph
+
 data:
   mrms_bucket: "noaa-mrms-pds"
-  sevir_bucket: "sevir"

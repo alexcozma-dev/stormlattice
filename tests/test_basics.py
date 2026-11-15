@@ -13,8 +13,17 @@ from stormlattice.route import classify
 
 def test_settings_load():
     s = settings()
-    assert s["grid"]["resolution_km"] == 2.0
-    assert s["forecast"]["ensemble_members"] == 50
+    assert s["forecast"]["ensemble_members"] > 0
+    assert 0 < s["risk"]["green_below"] < s["risk"]["red_above"] < 1
+
+
+def test_box_tiles_into_blocks():
+    # each span of the box must be a whole number of 0.08 deg blocks, or the block pooling cannot work
+    block_deg = 0.08    # hard-coded for now; import grid.BLOCK_DEG once grid.py exists
+    grid = settings()["grid"]
+    for span in (grid["lat_max"] - grid["lat_min"], grid["lon_max"] - grid["lon_min"]):
+        blocks = span / block_deg
+        assert abs(blocks - round(blocks)) < 1e-6
 
 
 def test_health_endpoint():
