@@ -1,6 +1,8 @@
 # StormLattice: Learned-Rate Stochastic Nowcasting for Florida Air Mobility
 
-Design doc, Nov 11, 2026 (with a Nov 13 addendum at the end). Author: Alex Cozma.
+Design doc, Nov 11, 2026; revised Nov 15 after an external architecture review (docs/architecture-review.md). Author: Alex Cozma.
+
+**How to read this doc:** the *Current plan* section is authoritative. Steps 1–10 are the original design, kept for the physics and ML explanations; each starts with a note saying what changed. The decision log at the end records every change and why.
 
 ## Overview
 
@@ -25,7 +27,91 @@ Architecture (from the original diagram): radar + lightning -> cell tracking -> 
 
 **Where the AI is essential:** without the learned rates, the system can only drag today's storms along. It can't see the afternoon sea-breeze storms coming. Without the LLM, NOTAM and SIGMET hazards never reach the router.
 
+
+## Current plan (Nov 15 revision)
+
+The core claim is narrow and testable: **on held-out Florida summer days, adding learned storm-birth probabilities to advection beats advection alone at 30–60 minute lead times, and the gain comes from births.** Everything is built to prove that first; the lattice and the app go on top.
+
+### The minimum version (about five working days)
+
+1. **Radar archive.** MRMS composite reflectivity for summer days chosen by a rule (e.g. every sixth day, June–August, keeping quiet days), at 10-minute cadence. Crop to Florida and regrid to the 2 km grid by **block maximum** (averaging dilutes cores below 35 dBZ). Store only the cropped arrays as compressed `.npz`; delete each GRIB after cropping.
+2. **Advection.** pysteps motion and extrapolation, giving the advected storm mask at each lead time.
+3. **Grid labels (no tracking).** A block is a **birth at lead L** if it holds ≥35 dBZ (at least ~4 pixels, persisting two frames) in the window [t0+L, t0+L+10], held none in the previous 20 minutes, and is not covered by the advected mask (allow a small tolerance region so motion errors don't become fake births). Blocks are **8 km** (4×4 cells), and the label, the predicted rate and the simulated footprint all use the same block.
+4. **Features at t0.** Distance to each coast, water fraction and land mask (from Natural Earth shapes), local solar time, day of year, **lead time L**, and the radar state: neighbourhood maximum dBZ and its 10-minute trend (sub-35 dBZ echoes are the strongest cheap predictor), distance to the nearest storm, storm area within 20 and 50 km.
+5. **Model.** One XGBoost classifier with shallow trees and a large `min_child_weight` (the real sample size is the number of days), calibrated with isotonic regression on **undownsampled** validation days. Output: birth probability per block per lead.
+6. **Score.** Against persistence, advection, a probabilistic advection baseline and climatology (block × hour), at 30, 45 and 60 minutes on held-out days (see Evaluation below).
+
+### The lattice, version 1 (on top of the minimum version)
+
+- Two states only (empty, active), Design A, κ = 0. No cold-pool state yet.
+- Existing storms are **objects** (connected components at t0). Each moves by its **cumulative displacement** from t0 (iterated nearest-neighbour advection stalls in weak flow) and **dies as a whole** with a hazard from an empirical **survival table** (fraction of the advected footprint still ≥35 dBZ, by storm size and lead).
+- Births switch on a **whole 8 km block** with the learned rate for that lead.
+- **200 members** (50 gives ±4-point noise at the green/amber threshold).
+- Unit test: with these rules the ensemble mean has a closed form from the cumulative hazards; the simulation must match it. This replaces the SSA patch test and the mean-field PDE solver.
+
+### LLM role
+
+Free-text NOTAM parsing (schema-validated, injection-tested) and the cited briefing. SIGMETs, METARs and PIREPs come already decoded from aviationweather.gov, so the LLM doesn't parse those. NOTAM API access was requested from the FAA NOTAM Service Center on Nov 15; fallback is saved NOTAM text labeled as sample data.
+
+### Evaluation (replaces the Step 9 table)
+
+| Forecast | What it shows |
+| --- | --- |
+| Persistence | the floor |
+| Advection (deterministic) | the classical method |
+| Advection, probabilistic (neighbourhood-smoothed, threshold tuned on validation days) | a fair baseline for a probabilistic forecast |
+| Advection + deaths only (survival table) | isolates the effect of decay |
+| Advection + climatological birth rates | isolates "having births" from "learning births" |
+| Advection + learned birth rates | the claim |
+| Lattice v1 (route risk only) | coherent futures for the route card |
+| Direct neighbourhood XGBoost ("any storm within d km at t0+L") | honest benchmark for what the lattice adds; fallback if it slips |
+
+Lead with **Brier skill score** against block × hour climatology; report CSI with frequency bias, birth hit rate with false-alarm ratio, and a bootstrap interval over test days plus a win count ("better on 11 of 14 days"). Demo replay days come from the test set, chosen before looking at results.
+
+### Early tests (run first)
+
+1. **Headroom test:** on 3–5 summer afternoons, the fraction of observed ≥35 dBZ area at +30/+45/+60 min lying more than 10 km from the advected t0 storms. This is the ceiling of the whole claim.
+2. **Fetch timing:** fetch and crop 3 days, time it, extrapolate; start the full batch overnight.
+3. **Buffer test:** route risk from *observed* radar on a replay afternoon for 5, 10 and 20 km buffers (the SunTrax–MCO flight is ~15 minutes).
+4. **Climatology vs. first XGBoost** on 10 train / 3 validation days (Brier).
+5. **Label sanity:** one day of births on the map; births per day; share lasting one frame.
+6. Later: e2-small cycle in Docker (`--cpus=0.5 --memory=2g`); the model on a clear December frame; demo with Wi-Fi off and no LLM key.
+
+### Schedule
+
+| Dates | Deliverable | Decision point |
+| --- | --- | --- |
+| Nov 15–17 | Batch fetch running overnight; regrid; advection baseline; headroom test. FAA request sent; teammate confirmed by Nov 20. | Headroom number known |
+| Nov 18–21 | Grid labels, feature table, climatology baseline, first XGBoost, first proof chart on validation days | Does XGBoost beat climatology? Sets the pitch |
+| Nov 22 | Thin page on the VM: observed-radar replay, route card with advection risk, LLM briefing from those facts | Both hard rules (LLM, GCP) satisfied |
+| Nov 23–27 | Lattice v1, route risk, departure window, NOTAM parsing. Thanksgiving Nov 26 | |
+| Nov 28–Dec 1 | Test set run once, accuracy panel, video recorded Nov 30, code frozen Dec 1 | |
+
+### Cut or deferred
+
+| Item | Status | Why |
+| --- | --- | --- |
+| SEVIR | Cut | different algorithm and era than live MRMS; few Florida tiles |
+| GOES GLM lightning | Cut | thousands of files per day; MRMS has lightning density grids if needed |
+| NLCD, 3DEP, coastline curvature | Cut | Natural Earth coast and water are enough; elevation is noise in Florida |
+| Hungarian tracking, split/merge logic | Cut | replaced by grid labels |
+| Intensity regression model | Cut | already optional |
+| Exact SSA patch test, mean-field PDE solver | Cut | replaced by the closed-form check |
+| A* reroute, energy gauge | Cut | short corridor; the departure window carries the value |
+| deck.gl 3D columns | Cut | 2D map with overlays and a time slider |
+| LLM parsing of SIGMETs/METARs/PIREPs | Cut | already decoded by the source API |
+| Spread–skill metric | Cut | reliability covers calibration |
+| Cold-pool state, κ triggers, gust-front layer | Deferred to future work / research | nothing observes a cold pool to fit or validate it |
+| HRRR features | Deferred, then added as an ablation | most valuable deferred item; use only forecasts published by t0 |
+| XGBoost death model, VIL, echo tops | Deferred | survival table first |
+
+### Pitch notes
+
+Keep Gillespie, contact process and propensity out of the pitch ("we roll the dice 200 times"). Don't claim that forecasting storms from sea-breeze boundaries is new (NCAR's Auto-Nowcaster did that for Florida in the 1990s); the contribution is learned birth rates driving a stochastic ensemble for AAM route decisions.
+
 ## Step 1 · Data
+
+> **Revised Nov 15:** MRMS composite reflectivity archive only (10-minute cadence, block-max regrid, cropped `.npz` storage). SEVIR, GLM, NLCD and 3DEP are cut; HRRR is deferred. Coast distances and water come from Natural Earth.
 
 Everything runs on free public data: radar and lightning to see storms, model winds to move them, geography to explain where they start, and a curated storm dataset to train on.
 
@@ -60,6 +146,8 @@ N(D) is the number of drops of diameter D per unit volume. Because of the sixth 
 
 ## Step 2 · Storm-cell detection and tracking
 
+> **Revised Nov 15:** frame-to-frame tracking and split/merge logic are cut. Births are labeled on 8 km blocks as storms advection does not explain (see Current plan). Connected components at t0 are still used, as the objects the lattice moves and kills. The 4 km² minimum area is one cell on the 2 km grid, so require ≥4 pixels and two-frame persistence.
+
 This step turns radar pixels into a list of storm *objects* with ages and histories. It also creates the training labels: which cells were just born, and which just died.
 
 ### The physics: a storm cell's life cycle
@@ -91,6 +179,8 @@ This object-and-track approach is how operational systems such as [MeteoSwiss CO
 
 ## Step 3 · Motion field and the advection baseline
 
+> **Revised Nov 15:** unchanged, plus a probabilistic version of this baseline for fair scoring (see Evaluation). Lattice objects move by cumulative displacement from t0, not step by step.
+
 This step estimates how the whole storm field is moving and builds the classical forecast that the AI has to beat. It assumes storms move but never grow, decay or form.
 
 ### The physics: steering and propagation
@@ -120,6 +210,8 @@ This is the pure advection equation, solved along characteristics. **Optical flo
 - The motion field is reused three times: for tracking in Step 2, as a feature in Step 5, and for advection inside the lattice in Step 6.
 
 ## Step 4 · Geography features
+
+> **Revised Nov 15:** keep coast distances, water fraction, land mask and solar time from Natural Earth; cut curvature, NLCD and elevation; HRRR deferred. Add the radar-state features (neighbourhood max dBZ and trend, distance to nearest storm, nearby storm area).
 
 This step encodes *where* in Florida storms like to be born. It's the storm version of the heterogeneous B(x) field from the author's Brusselator project, and builds on his NJ Highlands terrain pipeline.
 
@@ -153,6 +245,8 @@ The static layers are computed once and cached as arrays. The time-varying ones 
 - Keep the interaction between distance-to-coast and wind regime explicit. XGBoost can learn it, but a hand-made "distance to the expected collision zone" feature often helps a small dataset a lot.
 
 ## Step 5 · Learned rates with XGBoost
+
+> **Revised Nov 15:** one birth model on 8 km blocks with **lead time as a feature** (target: birth in [t0+L, t0+L+10]), not a per-cell "within 4 km" target, which counted each birth ~13 times. The death model is replaced by an empirical survival table for now. Calibrate on undownsampled validation data. The probability-to-rate conversion below is unchanged.
 
 This is the core AI component. Two gradient-boosted models turn radar, geography and environment features into calibrated probabilities: how likely a storm is to be **born** in each empty grid cell, and how likely each existing storm is to **die**, over the next time step (Δt = 10 min).
 
@@ -198,6 +292,8 @@ This is the same propensity idea as Gillespie: λ is the per-site reaction prope
 `shap` values give each prediction's top drivers ("+0.21 from sea-breeze collision zone, +0.12 from CAPE"). Those go to the LLM in Step 8, so the briefing can say *why* a storm is likely, grounded in the model rather than in the LLM's memory.
 
 ## Step 6 · The stochastic lattice
+
+> **Revised Nov 15:** version 1 has two states (no cold pools), κ = 0, deaths drawn **per object** (per-pixel deaths erode storms into speckle that never clears a route), births **per 8 km block**, cumulative-displacement advection, and 200 members. The cold-pool physics below is kept as the research direction, not shipped.
 
 This is the novel part. The learned rates from Step 5 drive a stochastic cellular model of Florida in which storms are advected by the wind, die, leave cold pools behind, and are born, either from the environment or where cold pools collide. Running it 50 times with different random draws gives a probability map of future storms, uncertainty included.
 
@@ -283,6 +379,8 @@ Solving this PDE and comparing it with the ensemble mean checks the stochastic c
 
 ## Step 7 · Route risk and the go/no-go call
 
+> **Revised Nov 15:** the departure window is the main product; A* reroute and the energy gauge are cut. Choose the buffer with the buffer test on observed radar (the corridor flight is ~15 minutes).
+
 This step answers the operator's actual question: if this aircraft leaves at this time on this route, how likely is it to meet a storm, and what's a safer option? The system advises, and a person decides.
 
 ### Risk along a route, done correctly
@@ -312,6 +410,8 @@ This counts members, rather than multiplying per-point probabilities, because st
 
 ## Step 8 · The LLM layer
 
+> **Revised Nov 15:** the parser handles free-text NOTAMs only; SIGMETs, METARs and PIREPs arrive decoded from aviationweather.gov. Pass facts to the briefing as preformatted strings so the number check doesn't trip on rounding.
+
 The LLM does two language jobs that code can't do well and the model can't do at all: it reads the aviation text products humans write, and it writes the briefing a human reads. It never computes a number or makes the call.
 
 ### Job 1: text in, structured hazards out
@@ -340,6 +440,8 @@ The LLM receives only structured facts computed elsewhere: route risk, departure
 Any API model with structured (JSON-schema) output works. Teams pay their own LLM costs, so use a small, cheap model for parsing and cache parsed NOTAMs, which change slowly. For development, a local model on the P16 laptop costs nothing.
 
 ## Step 9 · Validation
+
+> **Revised Nov 15:** the baselines and metrics are replaced by the Evaluation section of the Current plan (adds deaths-only, climatological-births and probabilistic-advection rows; leads with Brier skill; drops spread–skill and standalone ROC AUC).
 
 The claim to prove is narrow and testable: on held-out Florida storm days, StormLattice beats advection-only forecasting at 30–60 minute lead times, and the gain comes from predicting storm births. Every number goes in the README and on an "Accuracy" panel in the app.
 
@@ -371,6 +473,8 @@ Split by whole days or seasons, never by frames. For example: train on summers 2
 At 10–20 minutes, advection is very hard to beat, because storms simply haven't had time to change. The value should appear at 30–60 minutes and on afternoon sea-breeze days. If it doesn't, that's still a reportable result, and the ablation table says why.
 
 ## Step 10 · Interface, deployment and demo
+
+> **Revised Nov 15:** a thin end-to-end page goes live by **Nov 22**; 2D map with overlays (no deck.gl columns); replay days come from the test set; precomputed replay needs no compute. Consider resizing to e2-medium after the Docker test.
 
 The app is a single map page: storms erupt and drift across Florida, the operator draws a route, and a card answers go, wait or reroute, with a cited briefing beside it. Training happens on the laptop; the Google Cloud VM only runs the live pipeline and serves the page.
 
@@ -439,7 +543,7 @@ Before claiming novelty, do a proper literature search on convective-initiation 
 These decisions were made after reading the DOT AAM National Strategy and Comprehensive Plan (Dec 2025) and FDOT/SunTrax material. They take priority over the original text where they differ.
 
 - **Framing:** anchor the problem to DOT AAM National Strategy Recommendation 2.8 (enhanced weather detection, forecasting and reporting for AAM; AAM flies below 5,000 ft where weather is less served; move from nowcasting toward short-term prediction and decision-support tools).
-- **Gust-front hazard layer:** show the lattice's cold-pool fronts as a "gust-front risk" layer and include them in route risk. AAM aircraft are sensitive to wind and gusts (battery limits, handling); gust fronts can arrive before the rain.
+- **Gust-front hazard layer** *(deferred Nov 15: nothing observes a cold pool, so it can't be validated; future work)*: show the lattice's cold-pool fronts as a "gust-front risk" layer and include them in route risk. AAM aircraft are sensitive to wind and gusts (battery limits, handling); gust fronts can arrive before the rain.
 - **Demo corridor:** SunTrax Air (FDOT AAM test facility near Florida Poly) to Orlando International Airport, its vertiport partner. eVTOL-like profile (~150 mph cruise, under 5,000 ft). Replay summer sea-breeze days along I-4.
 - **Validation framing:** present Step 9 as a "weather provider performance report" (the Comprehensive Plan calls for standards and certification of third-party weather data providers).
 - **Machine-readable output:** document one JSON advisory format for the route/forecast API (future autonomous aircraft, 2035 target).
@@ -458,6 +562,14 @@ What was decided while building, and why. Newest last; add a row for each change
 | 2026-11-13 | Frame the project on DOT AAM Strategy Rec. 2.8; SunTrax -> MCO demo corridor; gust-front layer | ties the work to a stated national need and a local, real AAM route |
 | 2026-11-14 | Offline unit tests with a fake S3 + opt-in live tests (STORM_NETWORK_TESTS=1) | fixed inputs give known answers; live tests check real data still matches |
 | 2026-11-14 | Stop tracking .idea/; keep all design notes in this one file | editor settings are machine-specific; one doc is easier to keep current |
+| 2026-11-15 | Adopt the external architecture review: minimum version first, thin page live by Nov 22 | original scope was ~3x what 17 days allow; LLM and GCP rules were scheduled last |
+| 2026-11-15 | Grid birth labels on 8 km blocks instead of Hungarian tracking | cheaper, less label noise; labels and metric agree by construction |
+| 2026-11-15 | Lead time as a feature; one rate map per lead | rates trained for +10 min were reused out to +60 |
+| 2026-11-15 | Lattice v1: two states, per-object deaths (survival table), per-block births, cumulative displacement, 200 members | per-pixel deaths and per-cell births had the wrong units; weak flow stalls step-wise advection |
+| 2026-11-15 | Cold pools, κ triggers and the gust-front layer deferred to future work | no observation to fit or validate them |
+| 2026-11-15 | Cut SEVIR, GLM, NLCD, 3DEP, curvature, A*, energy gauge, deck.gl, SIGMET/METAR parsing; defer HRRR | one data product (MRMS) for training, replay and live; LLM keeps the defensible jobs |
+| 2026-11-15 | Evaluation adds deaths-only, climatological-births and probabilistic-advection rows; lead with Brier skill | without them, "the gain comes from births" was unsupported and CSI favoured any probabilistic forecast |
+| 2026-11-15 | NOTAM API requested from the FAA NOTAM Service Center (7-AWA-NAIMES@faa.gov); fallback: saved NOTAM text labeled as sample | access is by request, not self-serve |
 
 ## Sources
 
