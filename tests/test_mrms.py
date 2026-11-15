@@ -61,6 +61,6 @@ def test_download_and_load_florida(tmp_path):
     path = mrms.download(mrms.latest_key(), tmp_path)
     fl = mrms.load_florida(path)
     print("shape:", fl.shape, "min:", float(fl.min()), "max:", float(fl.max()))
-    assert fl.shape == (650, 750)                   # the Florida box
+    assert fl.shape == (648, 752)                   # the Florida box
     assert float(fl.min()) >= mrms.NO_ECHO_FLOOR    # no -999/-99 flags left
     assert fl.longitude.min() < -87 and fl.longitude.max() > -80.1  # -180..180 convention

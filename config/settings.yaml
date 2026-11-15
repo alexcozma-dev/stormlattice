@@ -2,12 +2,15 @@
 
 grid:
   # Florida box (degrees). Regridded to an equal-area grid at `resolution_km`.
-  lat_min: 24.5
+  lat_min: 24.52
   lat_max: 31.0
-  lon_min: -87.5
+  lon_min: -87.52
   lon_max: -80.0
   resolution_km: 2.0
   projection: "EPSG:5070"   # CONUS Albers equal-area
+
+archive:
+  max_frame_offset_min: 4   # a 10-minute slot with no frame this close is stored as all-NaN
 
 cells:
   reflectivity_threshold_dbz: 35   # tune: 35-40
