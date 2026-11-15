@@ -28,7 +28,9 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from stormlattice import mrms
+import numpy as np
+
+from stormlattice import grid, mrms
 
 
 def day_start(day, start_hour_utc):
@@ -54,3 +56,23 @@ def frame_keys(day, start_hour_utc, fs=None):
     for date in (start, end):       # a storm day spans two UTC date folders
         keys += fs.ls(f"{mrms.BUCKET}/CONUS/{mrms.REFLECTIVITY}/{date:%Y%m%d}")
     return [ k for k in keys if start <= mrms.frame_time(k) < end ]
+
+def match_slots(slots, keys, max_offset_min):
+    """The key of the frame nearest each slot time, or None if no frame is within max_offset_min."""
+    times = [ mrms.frame_time(k) for k in keys ]
+    limit = timedelta(minutes=max_offset_min)
+    matched = []
+    for slot in slots:
+        offsets = [ abs(t - slot) for t in times ]      # timedelta from this slot to every frame
+        i = offsets.index(min(offsets)) if offsets else None
+        matched.append( keys[i] if i is not None and offsets[i] <= limit else None )
+    return matched
+
+def load_cells(key, grib_dir, fs=None):
+    """Download one MRMS frame, crop it, coarsen to 0.02 deg cells, delete the GRIB: (ny, nx) float32."""
+    grib_path = mrms.download(key, grib_dir, fs=fs)
+    try:
+        pixels = mrms.load_florida(grib_path).values        # (648, 752) dBZ; NaN = no radar coverage
+    finally:
+        grib_path.unlink(missing_ok=True)                   # runs even if loading failed
+    return grid.block_max(pixels, grid.PIXELS_PER_CELL).astype(np.float32)
