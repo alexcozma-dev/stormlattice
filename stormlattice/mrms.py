@@ -14,7 +14,6 @@ from pathlib import Path
 
 import s3fs
 import xarray as xr
-from gribapi import grib_full_defs_path
 
 from stormlattice.config import settings
 
@@ -78,11 +77,11 @@ def load_florida(path: Path) -> xr.DataArray:
     Open a GRIB2 frame, crop to the Florida box from settings.yaml, and clean the flags.
 
     Returns reflectivity in dBZ with longitudes in -180..180. No coverage -> NaN,
-    clean air -> NO_ECHO_FLOOR. (Regridding to the 2 km grid comes later. )
+    clean air -> NO_ECHO_FLOOR. (Regridding to 0.02 deg cells (grid.py) comes later. )
     """
     box = settings()["grid"]
     ds = xr.open_dataset(path, engine="cfgrib", backend_kwargs={"indexpath": ""})
-    da = ds[list(ds.data_vars)[0]]      # the only variable ('unknown')
+    da = ds[next(iter(ds.data_vars))]      # the only variable ('unknown')
 
     # Latitude is stored north -> south, so the slice runs max -> min.
     fl = da.sel(latitude=slice(box["lat_max"], box["lat_min"]),

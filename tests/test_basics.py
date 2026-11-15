@@ -4,10 +4,11 @@ import numpy as np
 from fastapi.testclient import TestClient
 
 from scripts.evaluate import csi
+from stormlattice import grid
 from stormlattice.api.app import app
+from stormlattice.birth_model import probability_to_rate, rate_to_probability
 from stormlattice.config import settings
 from stormlattice.llm.guardrails import ungrounded_numbers
-from stormlattice.birth_model import probability_to_rate, rate_to_probability
 from stormlattice.route import classify
 
 
@@ -19,9 +20,9 @@ def test_settings_load():
 
 def test_box_tiles_into_blocks():
     # each span of the box must be a whole number of 0.08 deg blocks, or the block pooling cannot work
-    block_deg = 0.08    # hard-coded for now; import grid.BLOCK_DEG once grid.py exists
-    grid = settings()["grid"]
-    for span in (grid["lat_max"] - grid["lat_min"], grid["lon_max"] - grid["lon_min"]):
+    block_deg = grid.BLOCK_DEG
+    box = settings()["grid"]
+    for span in (box["lat_max"] - box["lat_min"], box["lon_max"] - box["lon_min"]):
         blocks = span / block_deg
         assert abs(blocks - round(blocks)) < 1e-6
 

@@ -22,9 +22,9 @@ files = fs.ls(days[-1])
 print(f"{len(files)} files today; newest: {files[-3:]}")
 
 # %% checkpoint B: download and decompress the newest frame
-from datetime import datetime, timezone
 import gzip
 import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 
 #newest file (names sort by time because of the YYYYMMDD-HHMMSS format)
@@ -72,7 +72,7 @@ ds = xr.open_dataset(grib_path, engine="cfgrib", backend_kwargs={"indexpath": ""
 print(ds)
 
 #the dataset holds one variable; grab it by position (MRMS names are often unhelpful)
-var_name = list(ds.data_vars)[0]
+var_name = next(iter(ds.data_vars))
 da = ds[var_name]
 print(f"variable name: {var_name}, dims: {da.dims}, shape: {da.shape}, dtype: {da.dtype}")
 print(f"memory: {da.nbytes / 1e6:.0f} MB")
