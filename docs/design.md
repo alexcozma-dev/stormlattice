@@ -34,9 +34,9 @@ The core claim is narrow and testable: **on held-out Florida summer days, adding
 
 ### The minimum version (about five working days)
 
-1. **Radar archive.** MRMS composite reflectivity for summer days chosen by a rule (e.g. every sixth day, June–August, keeping quiet days), at 10-minute cadence. Crop to Florida and regrid to the 2 km grid by **block maximum** (averaging dilutes cores below 35 dBZ). Store only the cropped arrays as compressed `.npz`; delete each GRIB after cropping.
+1. **Radar archive.** MRMS composite reflectivity for summer days chosen by a rule (e.g. every sixth day, June–August, keeping quiet days), at 10-minute cadence. Crop to Florida and coarsen MRMS's 0.01° grid to **0.02° cells (about 2 km)** by an exact 2×2 **block maximum** (averaging dilutes cores below 35 dBZ). Store only the cropped arrays as compressed `.npz`; delete each GRIB after cropping.
 2. **Advection.** pysteps motion and extrapolation, giving the advected storm mask at each lead time.
-3. **Grid labels (no tracking).** A block is a **birth at lead L** if it holds ≥35 dBZ (at least ~4 pixels, persisting two frames) in the window [t0+L, t0+L+10], held none in the previous 20 minutes, and is not covered by the advected mask (allow a small tolerance region so motion errors don't become fake births). Blocks are **8 km** (4×4 cells), and the label, the predicted rate and the simulated footprint all use the same block.
+3. **Grid labels (no tracking).** A block is a **birth at lead L** if it holds ≥35 dBZ (at least ~4 pixels, persisting two frames) in the window [t0+L, t0+L+10], held none in the previous 20 minutes, and is not covered by the advected mask (allow a small tolerance region so motion errors don't become fake births). Blocks are **0.08°, about 8 km** (4×4 cells), and the label, the predicted rate and the simulated footprint all use the same block.
 4. **Features at t0.** Distance to each coast, water fraction and land mask (from Natural Earth shapes), local solar time, day of year, **lead time L**, and the radar state: neighbourhood maximum dBZ and its 10-minute trend (sub-35 dBZ echoes are the strongest cheap predictor), distance to the nearest storm, storm area within 20 and 50 km.
 5. **Model.** One XGBoost classifier with shallow trees and a large `min_child_weight` (the real sample size is the number of days), calibrated with isotonic regression on **undownsampled** validation days. Output: birth probability per block per lead.
 6. **Score.** Against persistence, advection, a probabilistic advection baseline and climatology (block × hour), at 30, 45 and 60 minutes on held-out days (see Evaluation below).
@@ -120,7 +120,7 @@ Everything runs on free public data: radar and lightning to see storms, model wi
 | Radar mosaic (reflectivity, VIL, echo tops) | [NOAA MRMS on AWS](https://registry.opendata.aws/noaa-mrms-pds/), no account needed | about 1 km, updates every 2 min | live input, cell detection |
 | Lightning flashes | GOES-East Geostationary Lightning Mapper (NOAA open data) | event points, about 20 s | cell features, aviation hazard |
 | Winds, CAPE, moisture | HRRR forecast model (NOAA open data) | 3 km, hourly | steering flow, environment features |
-| Coastline, lakes, land cover, elevation | NOAA shoreline, USGS hydrography, NLCD land cover, USGS 3DEP | 30 m to 1 km, resampled to 2 km | geography features |
+| Coastline, lakes, land cover, elevation | NOAA shoreline, USGS hydrography, NLCD land cover, USGS 3DEP | 30 m to 1 km, resampled to the 0.02° grid | geography features |
 | Training events | [SEVIR](https://arxiv.org/pdf/2207.07033) (radar VIL, satellite IR, lightning) | 384 km tiles, 4 h, 5-min frames | model training and testing |
 
 ### The physics: what radar actually measures
@@ -140,13 +140,13 @@ N(D) is the number of drops of diameter D per unit volume. Because of the sixth 
 ### Build notes
 
 - Pull MRMS GRIB2 files with `s3fs` or the AWS CLI; decode with `xarray` + `cfgrib`.
-- Crop everything to a Florida box (roughly 24.5–31° N, 87.5–80° W) and regrid to one 2 km grid. One grid for every layer keeps the lattice and the features aligned.
+- Crop everything to a Florida box (24.52–31.00° N, 87.52–80.00° W) and put it on one 0.02° lat/lon grid (324 × 376 cells, 81 × 94 blocks; see the Nov 15 grid decision). One grid for every layer keeps the lattice and the features aligned.
 - Filter SEVIR events to tiles that overlap Florida, then supplement with MRMS archives from two or three summers (June–September) for Florida-only training.
 - Tag every dataset with its timestamp and whether it is live, historical replay or simulated. The interface shows all three labels.
 
 ## Step 2 · Storm-cell detection and tracking
 
-> **Revised Nov 15:** frame-to-frame tracking and split/merge logic are cut. Births are labeled on 8 km blocks as storms advection does not explain (see Current plan). Connected components at t0 are still used, as the objects the lattice moves and kills. The 4 km² minimum area is one cell on the 2 km grid, so require ≥4 pixels and two-frame persistence.
+> **Revised Nov 15:** frame-to-frame tracking and split/merge logic are cut. Births are labeled on 8 km blocks as storms advection does not explain (see Current plan). Connected components at t0 are still used, as the objects the lattice moves and kills. The 4 km² minimum area is about one 0.02° cell (4.2–4.5 km²), so require ≥4 pixels and two-frame persistence.
 
 This step turns radar pixels into a list of storm *objects* with ages and histories. It also creates the training labels: which cells were just born, and which just died.
 
@@ -223,7 +223,7 @@ This step encodes *where* in Florida storms like to be born. It's the storm vers
 4. **Collision:** Florida is a narrow peninsula with breezes from both the Atlantic and the Gulf. Where they meet over the interior, the forced lift is strong. If the air is unstable (high CAPE), thunderstorms erupt along the collision line, typically mid to late afternoon in summer.
 5. **Modifiers:** Lake Okeechobee makes its own lake breeze, cities form heat islands that strengthen updrafts, and the background wind direction decides which coast's breeze wins and how far it pushes inland.
 
-### The features (per 2 km grid cell)
+### The features (per 0.02° grid cell)
 
 | Feature | Why it matters |
 | --- | --- |
@@ -299,7 +299,7 @@ This is the novel part. The learned rates from Step 5 drive a stochastic cellula
 
 ### The state
 
-The grid is the 2 km Florida grid from Step 1, about 10⁵ cells. Each cell is in one of three states, an excitable-medium model in the family of the Greenberg–Hastings automaton:
+The grid is the 0.02° Florida grid from Step 1 (about 2 km), 324 × 376 ≈ 1.2 × 10⁵ cells. Each cell is in one of three states, an excitable-medium model in the family of the Greenberg–Hastings automaton:
 
 | State | Meaning | Analog in excitable media (BZ reaction) |
 | --- | --- | --- |
@@ -547,7 +547,7 @@ These decisions were made after reading the DOT AAM National Strategy and Compre
 - **Demo corridor:** SunTrax Air (FDOT AAM test facility near Florida Poly) to Orlando International Airport, its vertiport partner. eVTOL-like profile (~150 mph cruise, under 5,000 ft). Replay summer sea-breeze days along I-4.
 - **Validation framing:** present Step 9 as a "weather provider performance report" (the Comprehensive Plan calls for standards and certification of third-party weather data providers).
 - **Machine-readable output:** document one JSON advisory format for the route/forecast API (future autonomous aircraft, 2035 target).
-- **Stated limits:** storm-scale hazards on a 2 km grid; not microscale (<2 km) wind. Future work: aircraft-reported weather feeding the rates.
+- **Stated limits:** storm-scale hazards on a ~2 km grid; not microscale (<2 km) wind. Future work: aircraft-reported weather feeding the rates.
 
 ## Decision log
 
@@ -555,7 +555,7 @@ What was decided while building, and why. Newest last; add a row for each change
 
 | Date | Decision | Why |
 | --- | --- | --- |
-| 2026-11-11 | 2 km equal-area grid (EPSG:5070) over Florida | matches storm-cell scale; ~10^5 cells keeps the lattice fast in NumPy |
+| 2026-11-11 | 2 km equal-area grid (EPSG:5070) over Florida (superseded Nov 15) | matches storm-cell scale; ~10^5 cells keeps the lattice fast in NumPy |
 | 2026-11-11 | Lattice Design A (frozen rates + κ triggers) for the MVP | fast and debuggable; Design B is research |
 | 2026-11-11 | Host on one e2-small VM behind Cloudflare (Full strict) | fits the $50 credits; HTTPS on alexcozma.dev |
 | 2026-11-12 | MRMS flags: -999 -> NaN (no coverage), -99 -> -32 dBZ floor (clear air) | clear air is information, not missing data; ~86% of a typical frame is clear |
@@ -570,6 +570,8 @@ What was decided while building, and why. Newest last; add a row for each change
 | 2026-11-15 | Cut SEVIR, GLM, NLCD, 3DEP, curvature, A*, energy gauge, deck.gl, SIGMET/METAR parsing; defer HRRR | one data product (MRMS) for training, replay and live; LLM keeps the defensible jobs |
 | 2026-11-15 | Evaluation adds deaths-only, climatological-births and probabilistic-advection rows; lead with Brier skill | without them, "the gain comes from births" was unsupported and CSI favoured any probabilistic forecast |
 | 2026-11-15 | NOTAM API requested from the FAA NOTAM Service Center (7-AWA-NAIMES@faa.gov); fallback: saved NOTAM text labeled as sample | access is by request, not self-serve |
+| 2026-11-15 | 0.02° lat/lon grid (MRMS 0.01° coarsened by exact 2×2 block max) replaces EPSG:5070; box 24.52–31.00° N, 87.52–80.00° W; grid.py owns every km conversion | every cell is the max of exactly 4 pixels; no reprojection; north-aligned; web overlay needs only a 1-D row warp. Cost: cells 2.22 km × 1.91–2.03 km, area varies 6% by row, handled in grid.py (docs/structure-review.md) |
+| 2026-11-15 | Storm day = 10:00 to 10:00 UTC, named by its start date; one frames file per storm day | Florida's evening storms cross 00 UTC; splitting by UTC date would cut a storm cycle across splits |
 
 ## Sources
 
