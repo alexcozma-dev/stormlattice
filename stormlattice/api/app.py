@@ -36,6 +36,6 @@ def meta() -> dict:
 
 # Planned endpoints:
 #   GET  /api/forecast/latest      probability tiles + data timestamps + ensemble spread
-#   POST /api/route                route risk, departure window, reroute
-#   GET  /api/hazards              parsed NOTAM / SIGMET polygons
+#   POST /api/route                route risk and departure window
+#   GET  /api/hazards              parsed NOTAM hazards
 #   POST /api/briefing             LLM briefing for a route (rate-limited)

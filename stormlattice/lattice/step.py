@@ -1,49 +1,31 @@
-"""Step 6: the stochastic lattice (excitable-medium, contact-process model).
+"""Step 6: the stochastic lattice, version 1.
 
-States per grid cell: 0 = empty, 1 = active storm, 2 = cold pool (refractory).
+Two states per grid cell: 0 = empty, 1 = active storm. No cold-pool state (deferred).
 
-One step (dt = 5 min), vectorized over all ensemble members (arrays are (M, ny, nx)):
-    1. Advect active cells and cold pools by the motion field.
-    2. Die: active -> cold pool with probability p_death.
-    3. Expand and recover: pools grow at the front speed; pool -> empty with prob dt / tau_cp.
-    4. Be born: empty -> active with
-           p = 1 - exp(-(lam_env + k2*[n_fronts >= 2] + k3*[n_fronts >= 3]) * dt)
+Rules, for each ensemble member (see "The lattice, version 1" in docs/design.md):
+    1. Existing storms are objects: the connected components of the storm mask at t0.
+       Each object moves by its cumulative displacement from t0. (Stepping a binary field
+       forward one step at a time stalls in weak flow.)
+    2. Each object dies as a whole, with a hazard from the survival table (by storm size
+       and lead time). Deaths are never drawn pixel by pixel.
+    3. Births switch on a whole 0.08 deg block (about 8 km) with the learned birth rate
+       for that lead time.
 
-Design A (MVP): lam_env from XGBoost once per forecast; triggering via the kappa terms.
-Design B (research): re-query XGBoost every step on features recomputed from the simulated state.
+Rates are frozen at t0 (Design A): one birth-rate map per lead, computed once per forecast.
 
-Validation habit: with kappa = 0, the ensemble mean must match the mean-field PDEs in meanfield.py.
+Check: with these rules each cell's storm probability has a closed form from the cumulative
+hazards. The ensemble mean must match it; that is the unit test for this module.
+
+To write: step, run, closed_form_probability.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import numpy as np
 
-EMPTY, ACTIVE, POOL = 0, 1, 2
+EMPTY, ACTIVE = 0, 1
 
 
-@dataclass
-class LatticeParams:
-    dt_min: float
-    cold_pool_lifetime_min: float
-    kappa2_per_min: float
-    kappa3_per_min: float
-
-
-def count_fronts(pool: np.ndarray) -> np.ndarray:
-    """Number of distinct cold pools whose edge is within one cell of each cell. (M, ny, nx) -> int."""
-    raise NotImplementedError
-
-
-def step(
-    state: np.ndarray,
-    motion: np.ndarray,
-    lam_env: np.ndarray,
-    p_death: np.ndarray,
-    params: LatticeParams,
-    rng: np.random.Generator,
-) -> np.ndarray:
-    """Advance the (M, ny, nx) lattice state by one step and return the new state."""
-    raise NotImplementedError
+def storm_probability(states: np.ndarray) -> np.ndarray:
+    """Fraction of members with an active storm at each lead time and cell: (T, M, y, x) -> (T, y, x)."""
+    return (states == ACTIVE).mean(axis=1)

@@ -1,4 +1,4 @@
-"""Step 7: route risk from the ensemble, departure window, and reroute.
+"""Step 7: route risk from the ensemble, and the departure window.
 
 Risk = fraction of ensemble members in which ANY route point, at its arrival time, lies within
 `buffer_km` of an active storm. Counting members (not multiplying per-point probabilities)

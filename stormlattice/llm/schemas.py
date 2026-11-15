@@ -1,6 +1,6 @@
-"""Step 8: structured output the LLM must produce when parsing aviation text products.
+"""Step 8: structured output the LLM must produce when parsing free-text NOTAMs.
 
-The LLM fills these; code validates geometry and times before anything reaches the router.
+The LLM fills these; code validates geometry and times before anything reaches the map or the briefing.
 """
 
 from __future__ import annotations
@@ -12,8 +12,8 @@ from pydantic import BaseModel, Field
 
 
 class Hazard(BaseModel):
-    source_id: str = Field(description="NOTAM number, SIGMET id or PIREP id, copied verbatim")
-    kind: Literal["tfr", "closure", "obstacle", "convective_sigmet", "sigmet", "pirep", "other"]
+    source_id: str = Field(description="NOTAM number, copied verbatim")
+    kind: Literal["tfr", "closure", "obstacle", "other"]
     polygon_lonlat: list[tuple[float, float]] | None = None
     center_lonlat: tuple[float, float] | None = None
     radius_nm: float | None = None
@@ -24,6 +24,6 @@ class Hazard(BaseModel):
     summary: str = Field(max_length=200)
 
 
-class ParsedProducts(BaseModel):
+class ParsedNotams(BaseModel):
     hazards: list[Hazard]
-    unparsed_ids: list[str] = Field(default_factory=list, description="Products the model could not parse")
+    unparsed_ids: list[str] = Field(default_factory=list, description="NOTAMs the model could not parse")
