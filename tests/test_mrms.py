@@ -4,8 +4,8 @@ from datetime import datetime, timezone, timedelta
 
 import pytest
 
-from stormlattice.data import mrms
-from stormlattice.data.mrms import frame_time, latest_key
+from stormlattice import mrms
+from stormlattice.mrms import frame_time, latest_key
 
 def test_frame_time_from_key():
     key = ("noaa-mrms-pds/CONUS/MergedReflectivityQCComposite_00.50/20261112/"

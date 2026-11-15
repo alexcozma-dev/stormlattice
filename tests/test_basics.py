@@ -7,8 +7,8 @@ from scripts.evaluate import csi
 from stormlattice.api.app import app
 from stormlattice.config import settings
 from stormlattice.llm.guardrails import ungrounded_numbers
-from stormlattice.models.rates import probability_to_rate, rate_to_probability
-from stormlattice.risk.route import classify
+from stormlattice.birth_model import probability_to_rate, rate_to_probability
+from stormlattice.route import classify
 
 
 def test_settings_load():
