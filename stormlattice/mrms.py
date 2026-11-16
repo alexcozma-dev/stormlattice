@@ -54,8 +54,8 @@ def download(key: str, dest_dir: Path, fs=None) -> Path:
     """
     Download one .grib2.gz file and decompress it. Returns the .grib2 path.
 
-    Skips work that's already done, and writes to a temporary '.part' file firs so
-    interrupted run never leaves a half-written ,grib2 that looks complete.
+    Skips work that's already done, and writes to a temporary '.part' file first so
+    interrupted run never leaves a half-written .grib2 that looks complete.
     """
     dest_dir.mkdir(parents=True, exist_ok=True)
     gz_path = dest_dir / key.rsplit("/", 1)[-1]
@@ -63,7 +63,9 @@ def download(key: str, dest_dir: Path, fs=None) -> Path:
     if grib_path.exists():
         return grib_path
     if not gz_path.exists():
-        (fs or _filesystem()).get(key, str(gz_path))
+        gz_part = gz_path.with_name(gz_path.name + ".part") 
+        (fs or _filesystem()).get(key, str(gz_part))        # an interrupted download leaves only a .part
+        gz_part.replace(gz_path)                            # so a .gz exists only once it is complete
 
     part = grib_path.with_name(grib_path.name + ".part")
     with gzip.open(gz_path, "rb") as src, open(part, "wb") as dst:
