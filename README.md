@@ -77,7 +77,7 @@ All public and free:
 
 - NOAA MRMS radar mosaic, composite reflectivity (AWS Open Data, `s3://noaa-mrms-pds`): training,
   replay and live
-- Natural Earth coastline and lake shapes: geography features
+- Natural Earth 1:10m land and lakes shapes (public domain): geography features
 - FAA NOTAM API; aviationweather.gov Data API (SIGMETs, PIREPs, METARs, TAFs)
 - Planned, not used yet: HRRR model (NOAA Open Data)
 
