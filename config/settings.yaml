@@ -43,9 +43,9 @@ risk:
 
 route:
   # Demo corridor: SunTrax (Auburndale) to Orlando International Airport.
-  suntrax_lonlat: null            # fill in: 100 Transformation Way, Auburndale
-  mco_lonlat: [-81.309, 28.413]   # from OpenStreetMap
-  cruise_speed_kmh: 241           # about 150 mph
+  suntrax_lonlat: [-81.82897, 28.11423]   # SunTrax Blvd, Auburndale, FL 33823
+  mco_lonlat: [-81.31046, 28.42444]       # 1 Jeff Fuqua Blvd, Orlando, FL 32827
+  cruise_speed_kmh: 241                   # about 150 mph
 
 data:
   mrms_bucket: "noaa-mrms-pds"
