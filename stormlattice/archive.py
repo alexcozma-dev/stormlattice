@@ -92,7 +92,7 @@ def fetch_day(day, frames_dir, grib_dir, *, start_hour_utc, cadence_min, max_off
         raise ValueError(f"storm day {day}: no MRMS frames found")
     gap = np.full_like(real[0], np.nan)         # an all-NaN frame for empty slots
     dbz = np.stack([ f if f is not None else gap for f in frames ])
-    times = [ mrms.frame_time(k) if k else s for s, k in zip(dbz, keys) ]
+    times = [ mrms.frame_time(k) if k else s for s, k in zip(slots, keys) ]
     times_unix = np.array([ int(t.timestamp()) for t in times ], dtype=np.int64)
 
     part = out.with_name(out.name + ".part")
