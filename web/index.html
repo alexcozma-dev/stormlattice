@@ -4,32 +4,276 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>StormLattice</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <style>
-    body { margin: 0; font-family: system-ui, sans-serif; background: #0f1419; color: #e6e6e6; }
-    header { padding: 16px 24px; border-bottom: 1px solid #2a2f36; }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body { margin: 0; display: flex; flex-direction: column; font-family: system-ui, sans-serif;
+           font-size: 14px; background: #0f1419; color: #e6e6e6; }
+    header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 16px;
+             border-bottom: 1px solid #2a2f36; }
     h1 { margin: 0; font-size: 20px; }
-    .banner { display: inline-block; margin-top: 8px; padding: 2px 8px; border-radius: 4px;
-              background: #3a2f10; color: #f0c040; font-size: 12px; letter-spacing: 0.05em; }
-    main { padding: 24px; }
-    footer { position: fixed; bottom: 0; width: 100%; padding: 8px 24px; font-size: 12px;
-             color: #8a8f96; border-top: 1px solid #2a2f36; background: #0f1419; }
+    h2 { margin: 0 0 8px; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #8a8f96; }
+    .banner { padding: 4px 10px; border-radius: 4px; background: #f0c040; color: #1a1400;
+              font-size: 13px; font-weight: 700; letter-spacing: 0.06em; }
+    .banner-detail { color: #c9ccd1; }
+
+    main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 340px; }
+    .stage { display: flex; flex-direction: column; min-height: 0; }
+    #map { flex: 1; min-height: 320px; background: #1b2026; }
+    /* The radar image has one pixel per 0.02 deg cell. Show the cells, do not blur them. */
+    .radar { image-rendering: pixelated; }
+    /* Grey map tiles, so the only strong colours on the map are the radar and the corridor. */
+    .leaflet-tile-pane { filter: grayscale(1) brightness(0.9); }
+
+    .controls { padding: 10px 16px; border-top: 1px solid #2a2f36; }
+    .clock { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+    #time { font-size: 22px; font-variant-numeric: tabular-nums; font-weight: 600; }
+    #date, #count { color: #8a8f96; font-variant-numeric: tabular-nums; }
+    #noframe { color: #f0c040; }
+    .slider-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+    .slider-row input { flex: 1; min-width: 0; accent-color: #f0c040; }
+    button { min-width: 36px; padding: 4px 10px; border: 1px solid #3a4049; border-radius: 4px;
+             background: #1b2026; color: #e6e6e6; font: inherit; cursor: pointer; }
+    button:hover { background: #262c34; }
+    .ends { display: flex; justify-content: space-between; color: #8a8f96; font-size: 12px; }
+
+    aside { overflow-y: auto; border-left: 1px solid #2a2f36; }
+    section { padding: 14px 16px; border-bottom: 1px solid #2a2f36; }
+    section p { margin: 0 0 6px; line-height: 1.45; }
+    dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; }
+    dt { color: #8a8f96; }
+    dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+    .tag { display: inline-block; margin-bottom: 8px; padding: 2px 8px; border: 1px solid #f0c040;
+           border-radius: 4px; color: #f0c040; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; }
+    .todo { color: #f0c040; }
+    .muted { color: #8a8f96; }
+    #legend { display: flex; }
+    #legend div { flex: 1; text-align: left; font-size: 10px; color: #8a8f96; }
+    #legend i { display: block; height: 10px; margin-bottom: 2px; }
+
+    footer { padding: 8px 16px; font-size: 12px; color: #8a8f96; border-top: 1px solid #2a2f36; }
+
+    @media (max-width: 800px) {
+      body { height: auto; }
+      main { display: block; }
+      #map { height: 60vh; flex: none; }
+      aside { border-left: 0; }
+    }
   </style>
 </head>
 <body>
   <header>
     <h1>StormLattice</h1>
     <span class="banner" id="mode">LOADING</span>
+    <span class="banner-detail" id="mode-detail"></span>
   </header>
+
   <main>
-    <p>Map, route card and briefing panel go here (Step 10).</p>
+    <div class="stage">
+      <div id="map"></div>
+      <div class="controls">
+        <div class="clock">
+          <span id="time">--:--:-- UTC</span>
+          <span id="date"></span>
+          <span id="count"></span>
+          <span id="noframe" hidden>No radar frame was stored for this time.</span>
+        </div>
+        <div class="slider-row">
+          <button id="prev" type="button" aria-label="Previous frame">&#9664;</button>
+          <button id="play" type="button">Play</button>
+          <button id="next" type="button" aria-label="Next frame">&#9654;</button>
+          <input id="slider" type="range" min="0" max="0" step="1" value="0" aria-label="Radar frame time (UTC)">
+        </div>
+        <div class="ends"><span id="first"></span><span id="last"></span></div>
+      </div>
+    </div>
+
+    <aside>
+      <section>
+        <h2>Data shown</h2>
+        <dl>
+          <dt>Radar</dt><dd id="data-source">-</dd>
+          <dt>Kind</dt><dd id="data-kind">-</dd>
+          <dt>Valid</dt><dd id="data-valid">-</dd>
+          <dt>Built</dt><dd id="data-built">-</dd>
+        </dl>
+      </section>
+      <section>
+        <h2>Reflectivity (dBZ)</h2>
+        <div id="legend"></div>
+        <p class="muted" id="legend-note"></p>
+      </section>
+      <section>
+        <h2>Corridor</h2>
+        <p id="corridor">-</p>
+      </section>
+      <section>
+        <h2>Briefing</h2>
+        <span class="tag" id="briefing-tag" hidden>PLACEHOLDER &middot; NOT LLM OUTPUT</span>
+        <p id="briefing">-</p>
+      </section>
+    </aside>
   </main>
-  <footer id="disclaimer">Prototype. Not for operational flight decisions.</footer>
+
+  <footer id="disclaimer">Prototype for the Florida Poly AI Hackathon. Not for operational flight decisions.</footer>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
-    fetch("/api/meta").then(r => r.json()).then(m => {
-      document.getElementById("mode").textContent =
-        m.mode === "live" ? "LIVE" : m.mode === "replay" ? "HISTORICAL REPLAY" : "SIMULATED";
-      document.getElementById("disclaimer").textContent = m.disclaimer;
-    }).catch(() => { document.getElementById("mode").textContent = "API OFFLINE"; });
+    // Everything shown comes from static files written by scripts/build_replay.py:
+    //   replay/days.json, replay/<YYYYMMDD>/index.json, obs_<HHMM>.png, briefing.json
+    // so the page works from nginx alone, with the API down. Paths are relative on purpose.
+    // All times are UTC and are shown exactly as index.json gives them (no Date objects, so the
+    // browser's time zone can never leak in).
+
+    const MODE_LABEL = { live: "LIVE", replay: "HISTORICAL REPLAY", simulated: "SIMULATED" };
+    const MODE_DETAIL = { live: "current radar", replay: "recorded radar, not current weather",
+                          simulated: "simulated data, not real weather" };
+    const EMPTY_IMAGE = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
+    const PLAY_STEP_MS = 300;
+
+    const el = id => document.getElementById(id);
+    const dateOf = iso => iso.slice(0, 10);           // "2022-06-01T18:00:38Z" -> "2022-06-01"
+    const timeOf = iso => iso.slice(11, 19) + " UTC"; //                        -> "18:00:38 UTC"
+
+    async function getJson(url) {
+      const response = await fetch(url, { cache: "no-cache" });
+      if (!response.ok) throw new Error(url + ": HTTP " + response.status);
+      return response.json();
+    }
+
+    async function start() {
+      const listing = await getJson("replay/days.json");
+      const wanted = new URLSearchParams(location.search).get("day");   // ?day=YYYYMMDD
+      const day = listing.days.includes(wanted) ? wanted : listing.days[0];
+      if (!day) throw new Error("replay/days.json lists no storm days");
+      const base = "replay/" + day + "/";
+      const index = await getJson(base + "index.json");
+
+      showMode(index);
+      showLegend(index.legend);
+      const map = makeMap(index);
+      showCorridor(map, index.route);
+      showFrames(map, index, base);
+      showBriefing(base);
+    }
+
+    function showMode(index) {
+      el("mode").textContent = MODE_LABEL[index.mode] || "UNKNOWN MODE";
+      const first = index.frames[0].time_utc, last = index.frames[index.frames.length - 1].time_utc;
+      el("mode-detail").textContent = "Storm day " + dateOf(first) + " (UTC), " +
+        (MODE_DETAIL[index.mode] || "") + (index.split ? " · " + index.split + " split" : "");
+      el("data-source").textContent = index.source;
+      el("data-kind").textContent = (MODE_LABEL[index.mode] || "unknown").toLowerCase() + ", observed (not a forecast)";
+      el("data-built").textContent = "replay files built " + dateOf(index.built_utc) + " " + timeOf(index.built_utc);
+      el("first").textContent = dateOf(first) + " " + timeOf(first);
+      el("last").textContent = dateOf(last) + " " + timeOf(last);
+    }
+
+    function showLegend(legend) {
+      for (const step of legend) {
+        const item = document.createElement("div"), swatch = document.createElement("i");
+        swatch.style.background = step.rgb;
+        item.append(swatch, String(step.dbz));
+        el("legend").append(item);
+      }
+      el("legend-note").textContent = "Echoes below " + legend[0].dbz +
+        " dBZ and areas with no radar coverage are not drawn.";
+    }
+
+    function makeMap(index) {
+      const b = index.bounds;
+      const box = L.latLngBounds([b.lat_min, b.lon_min], [b.lat_max, b.lon_max]);
+      const map = L.map("map", { minZoom: 6, maxZoom: 11, maxBounds: box.pad(0.5) });
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      }).addTo(map);
+      // Edge of the radar grid: outside this box there is no data, which is not the same as clear air.
+      L.rectangle(box, { color: "#5b6470", weight: 1, dashArray: "4 4", fill: false, interactive: false }).addTo(map);
+      map.fitBounds(box);
+      return map;
+    }
+
+    function showCorridor(map, route) {
+      const toLatLng = lonlat => [lonlat[1], lonlat[0]];      // settings.yaml stores [lon, lat]
+      const mark = (lonlat, name) => L.circleMarker(toLatLng(lonlat),
+        { radius: 6, color: "#ffffff", weight: 2, fillColor: "#0f1419", fillOpacity: 1 })
+        .addTo(map).bindTooltip(name, { permanent: true, direction: "top", offset: [0, -6] });
+      const suntrax = route.suntrax_lonlat, mco = route.mco_lonlat;
+
+      if (mco) mark(mco, "MCO");
+      if (suntrax) mark(suntrax, "SunTrax");
+      if (suntrax && mco) {
+        const line = L.polyline([toLatLng(suntrax), toLatLng(mco)], { color: "#ffffff", weight: 3, dashArray: "8 6" });
+        line.addTo(map);
+        map.fitBounds(line.getBounds().pad(1.5));
+        el("corridor").textContent = "SunTrax (Auburndale) to Orlando International Airport (MCO), straight line.";
+      } else {
+        // TODO: route.suntrax_lonlat is null in config/settings.yaml. Fill it in, then rebuild
+        // the replay (python scripts/build_replay.py <YYYYMMDD>) and the corridor line appears.
+        el("corridor").className = "todo";
+        el("corridor").textContent = "TODO: corridor not drawn. route.suntrax_lonlat is not set in " +
+          "config/settings.yaml" + (mco ? "; only MCO is marked." : ".");
+        if (mco) map.setView(toLatLng(mco), 8);
+      }
+    }
+
+    function showFrames(map, index, base) {
+      const frames = index.frames, b = index.bounds;
+      // The PNG rows are evenly spaced in Web Mercator y (stormlattice/overlay.py), so placing
+      // the image by its bounds is exact. A plain lat/lon image here would be off by up to 5 km.
+      const radar = L.imageOverlay(EMPTY_IMAGE, [[b.lat_min, b.lon_min], [b.lat_max, b.lon_max]],
+        { opacity: 0.8, className: "radar", interactive: false }).addTo(map);
+      const slider = el("slider");
+      let current = 0, timer = null;
+
+      function show(i) {
+        current = (i + frames.length) % frames.length;       // wraps at both ends
+        const frame = frames[current];
+        radar.setUrl(frame.obs ? base + frame.obs : EMPTY_IMAGE);
+        slider.value = current;
+        el("time").textContent = timeOf(frame.time_utc);
+        el("date").textContent = dateOf(frame.time_utc);
+        el("count").textContent = "frame " + (current + 1) + " of " + frames.length;
+        el("noframe").hidden = Boolean(frame.obs);
+        el("data-valid").textContent = frame.obs ? dateOf(frame.time_utc) + " " + timeOf(frame.time_utc) : "no frame";
+      }
+
+      function setPlaying(on) {
+        clearInterval(timer);
+        timer = on ? setInterval(() => show(current + 1), PLAY_STEP_MS) : null;
+        el("play").textContent = on ? "Pause" : "Play";
+      }
+
+      slider.max = frames.length - 1;
+      slider.addEventListener("input", () => { setPlaying(false); show(Number(slider.value)); });
+      el("prev").addEventListener("click", () => { setPlaying(false); show(current - 1); });
+      el("next").addEventListener("click", () => { setPlaying(false); show(current + 1); });
+      el("play").addEventListener("click", () => setPlaying(timer === null));
+
+      for (const frame of frames) {           // fetch every frame once, so playback does not flicker
+        if (frame.obs) new Image().src = base + frame.obs;
+      }
+      show(0);
+    }
+
+    async function showBriefing(base) {
+      try {
+        const briefing = await getJson(base + "briefing.json");
+        el("briefing-tag").hidden = !briefing.placeholder;
+        el("briefing").textContent = briefing.text;
+      } catch (error) {
+        el("briefing").textContent = "No briefing file for this day.";
+      }
+    }
+
+    start().catch(error => {
+      el("mode").textContent = "NO DATA";
+      el("mode-detail").textContent = "Replay files did not load (" + error.message + "). " +
+        "Build them with: python scripts/build_replay.py <YYYYMMDD>";
+    });
   </script>
 </body>
 </html>

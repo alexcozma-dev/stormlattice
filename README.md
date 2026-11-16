@@ -17,34 +17,35 @@ Live demo: https://storm.alexcozma.dev
 
 ## How it works
 
-| Step | Module | What it does | Kind |
+| Stage | Module | What it does | Kind |
 | --- | --- | --- | --- |
-| 1 | `stormlattice/data` | Pull radar (MRMS), lightning (GLM), winds (HRRR), geography layers | code |
-| 2 | `stormlattice/cells` | Detect and track storm cells; label births and deaths | code |
-| 3 | `stormlattice/motion` | Optical-flow motion field and advection baseline (pysteps) | physics |
-| 4 | `stormlattice/features` | Sea-breeze geography and environment features | code |
-| 5 | `stormlattice/models` | XGBoost birth/death rate models, calibrated | **ML** |
-| 6 | `stormlattice/lattice` | Stochastic lattice: advect, die, cold pools, birth, trigger; 50-member ensemble | physics + ML |
-| 7 | `stormlattice/risk` | Route risk from the ensemble, departure window, reroute | code |
-| 8 | `stormlattice/llm` | Parse NOTAMs/SIGMETs/PIREPs to JSON; write a cited briefing | **LLM** |
-| 9 | `tests/`, `scripts/evaluate.py` | CSI, Brier skill, reliability, ablations vs. baselines | validation |
-| 10 | `stormlattice/api`, `web/` | FastAPI backend and map interface | app |
+| 1 | `mrms.py`, `archive.py`, `grid.py` | Fetch MRMS composite reflectivity, crop to Florida, coarsen to 0.02° cells (about 2 km) by block maximum, one file per storm day | code |
+| 2 | `advection.py` | pysteps motion field; advected storm mask at each lead time (the classical baseline) | physics |
+| 3 | `storms.py`, `labels.py`, `survival.py` | Storm objects; birth labels on 0.08° blocks, about 8 km (storms that advection does not explain); survival table | code |
+| 4 | `geography.py`, `features.py` | Coast distances, water fraction, clock time, lead time, radar state | code |
+| 5 | `birth_model.py` | One calibrated XGBoost classifier: birth probability per block per lead | **ML** |
+| 6 | `baselines.py`, `metrics.py`, `scripts/evaluate.py` | Brier skill and CSI against persistence, advection and climatology on held-out days | validation |
+| 7 | `lattice.py` | 200-member ensemble: storms move and die as objects, births switch on blocks | physics + ML |
+| 8 | `route.py` | Share of members in which the flight meets a storm; departure window | code |
+| 9 | `llm/` | Parse free-text NOTAMs to validated JSON; write a cited briefing | **LLM** |
+| 10 | `api/app.py`, `web/`, `overlay.py`, `scripts/build_replay.py` | FastAPI backend and map page, replay and live; map images built per replay day | app |
 
-Full design write-up: see `docs/design.md`.
+Modules are files in `stormlattice/`. Full design write-up: see `docs/design.md`.
 
 ## Repository layout
 
 ```
-config/          settings.yaml (grid, thresholds, lattice parameters)
+artifacts/       small trained outputs: model JSON, calibration, survival table (planned)
+config/          settings.yaml (grid, thresholds, lattice parameters); days.yaml (storm days by split)
 data/            local data cache (not committed)
 deploy/nginx/    reverse-proxy config for the VM
 docker/          Dockerfile and compose file
 docs/            design notes
 notebooks/       exploration (not part of the app)
 scripts/         one-off and batch jobs (fetch, train, evaluate)
-stormlattice/    the Python package
+stormlattice/    the Python package, one module per concept
 tests/           pytest suite
-web/             front-end
+web/             the map page; web/replay/<YYYYMMDD>/ holds the files for one replay day
 ```
 
 ## Setup
@@ -57,27 +58,28 @@ cd stormlattice
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt          # app + pipeline
 pip install -r requirements-train.txt    # training and notebooks (laptop only)
+pip install -e .                         # so scripts and notebooks can import stormlattice
 cp .env.example .env                     # then fill in keys
 pytest
 ```
 
-Run the API locally:
+Run the page and the API locally:
 
 ```bash
+python scripts/build_replay.py 20220601  # map images for one storm day already in data/frames/
 uvicorn stormlattice.api.app:app --reload
-# open http://127.0.0.1:8000/health
+# open http://127.0.0.1:8000/ (the page) or http://127.0.0.1:8000/health
 ```
 
 ## Data sources
 
 All public and free:
 
-- NOAA MRMS radar mosaic (AWS Open Data, `s3://noaa-mrms-pds`)
-- GOES-East Geostationary Lightning Mapper (NOAA Open Data)
-- HRRR model (NOAA Open Data)
-- SEVIR storm event dataset (AWS Open Data, `s3://sevir`) for training
-- NOAA shoreline, USGS hydrography and 3DEP elevation, NLCD land cover
+- NOAA MRMS radar mosaic, composite reflectivity (AWS Open Data, `s3://noaa-mrms-pds`): training,
+  replay and live
+- Natural Earth coastline and lake shapes: geography features
 - FAA NOTAM API; aviationweather.gov Data API (SIGMETs, PIREPs, METARs, TAFs)
+- Planned, not used yet: HRRR model (NOAA Open Data)
 
 ## Responsible AI checklist
 

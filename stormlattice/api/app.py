@@ -1,6 +1,7 @@
 """Step 10: FastAPI backend. nginx on the VM proxies https://storm.alexcozma.dev to this app.
 
 Run locally:  uvicorn stormlattice.api.app:app --reload
+              then open http://127.0.0.1:8000/ (the page in web/) or /health
 """
 
 from __future__ import annotations
@@ -8,9 +9,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from stormlattice import __version__
-from stormlattice.config import mode
+from stormlattice.config import REPO_ROOT, mode
 
 app = FastAPI(title="StormLattice", version=__version__)
 
@@ -39,3 +41,9 @@ def meta() -> dict:
 #   POST /api/route                route risk and departure window
 #   GET  /api/hazards              parsed NOTAM hazards
 #   POST /api/briefing             LLM briefing for a route (rate-limited)
+
+
+# The page and its replay files. On the VM nginx serves web/ itself; this mount gives the same
+# URLs locally (/ is the page, /replay/<YYYYMMDD>/... its files). It must stay last: a mount on
+# "/" matches every path, so routes added after it would never be reached.
+app.mount("/", StaticFiles(directory=REPO_ROOT / "web", html=True), name="web")
