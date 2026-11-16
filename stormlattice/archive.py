@@ -27,6 +27,7 @@ To write: the frame keys for a storm day, fetch_day, load_day.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import numpy as np
 
@@ -76,3 +77,33 @@ def load_cells(key, grib_dir, fs=None):
     finally:
         grib_path.unlink(missing_ok=True)                   # runs even if loading failed
     return grid.block_max(pixels, grid.PIXELS_PER_CELL).astype(np.float32)
+
+def fetch_day(day, frames_dir, grib_dir, *, start_hour_utc, cadence_min, max_offset_min, fs=None):
+    """Fetch one storm day into frames_dir/<day>.npz and return the path. A day already on disk is skipped."""
+    out = Path(frames_dir) / f"{day}.npz"
+    if out.exists():
+        return out
+    slots = slot_times(day, start_hour_utc, cadence_min)
+    keys = match_slots(slots, frame_keys(day, start_hour_utc, fs=fs), max_offset_min)
+    frames = [ load_cells(k, grib_dir, fs=fs) if k else None for k in keys ]
+
+    real = [ f for f in frames if f is not None ]
+    if not real:
+        raise ValueError(f"storm day {day}: no MRMS frames found")
+    gap = np.full_like(real[0], np.nan)         # an all-NaN frame for empty slots
+    dbz = np.stack([ f if f is not None else gap for f in frames ])
+    times = [ mrms.frame_time(k) if k else s for s, k in zip(dbz, keys) ]
+    times_unix = np.array([ int(t.timestamp()) for t in times ], dtype=np.int64)
+
+    part = out.with_name(out.name + ".part")
+    with open(part, "wb") as f:         # pass a file, so NumPy can't add ".npz" to the name
+        np.savez_compressed(f, dbz=dbz, times_unix=times_unix)
+    part.replace(out)                   # appears under its real name only when complete
+    return out
+
+def load_day(path):
+    """One storm day: dbz (t, ny, nx) float32 and the frame times as UTC datetimes."""
+    with np.load(path) as f:
+        dbz = f["dbz"]
+        times = [ datetime.fromtimestamp(int(t), tz=timezone.utc) for t in f["times_unix"] ]
+    return dbz, times
