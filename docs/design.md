@@ -36,7 +36,7 @@ The core claim is narrow and testable: **on held-out Florida summer days, adding
 
 1. **Radar archive.** MRMS composite reflectivity for summer days chosen by a rule (e.g. every sixth day, June–August, keeping quiet days), at 10-minute cadence. Crop to Florida and coarsen MRMS's 0.01° grid to **0.02° cells (about 2 km)** by an exact 2×2 **block maximum** (averaging dilutes cores below 35 dBZ). Store only the cropped arrays as compressed `.npz`; delete each GRIB after cropping.
 2. **Advection.** pysteps motion and extrapolation, giving the advected storm mask at each lead time.
-3. **Grid labels (no tracking).** A block is a **birth at lead L** if it holds ≥35 dBZ (at least ~4 pixels, persisting two frames) in the window [t0+L, t0+L+10], held none in the previous 20 minutes, and is not covered by the advected mask (allow a small tolerance region so motion errors don't become fake births). Blocks are **0.08°, about 8 km** (4×4 cells), and the label, the predicted rate and the simulated footprint all use the same block.
+3. **Grid labels (no tracking).** A block is a **birth at lead L** if it holds ≥35 dBZ (at least 4 cells, persisting two frames) in the window [t0+L, t0+L+10], held none in the previous 20 minutes, and is not covered by the advected mask (allow a small tolerance region so motion errors don't become fake births). Blocks are **0.08°, about 8 km** (4×4 cells), and the label, the predicted rate and the simulated footprint all use the same block. Births are labelled and scored only inside the **evaluation region**: the domain minus a 72 km margin on every side, so storms drifting in from outside the box are never counted as births.
 4. **Features at t0.** Distance to each coast, water fraction and land mask (from Natural Earth shapes), local solar time, day of year, **lead time L**, and the radar state: neighbourhood maximum dBZ and its 10-minute trend (sub-35 dBZ echoes are the strongest cheap predictor), distance to the nearest storm, storm area within 20 and 50 km.
 5. **Model.** One XGBoost classifier with shallow trees and a large `min_child_weight` (the real sample size is the number of days), calibrated with isotonic regression on **undownsampled** validation days. Output: birth probability per block per lead.
 6. **Score.** Against persistence, advection, a probabilistic advection baseline and climatology (block × hour), at 30, 45 and 60 minutes on held-out days (see Evaluation below).
@@ -140,7 +140,7 @@ N(D) is the number of drops of diameter D per unit volume. Because of the sixth 
 ### Build notes
 
 - Pull MRMS GRIB2 files with `s3fs` or the AWS CLI; decode with `xarray` + `cfgrib`.
-- Crop everything to a Florida box (24.52–31.00° N, 87.52–80.00° W) and put it on one 0.02° lat/lon grid (324 × 376 cells, 81 × 94 blocks; see the Nov 15 grid decision). One grid for every layer keeps the lattice and the features aligned.
+- Crop everything to a Florida box (23.80–31.00° N, 87.52–78.40° W) and put it on one 0.02° lat/lon grid (360 × 456 cells, 90 × 114 blocks; see the Nov 15 grid decision and the Nov 16 box decision). One grid for every layer keeps the lattice and the features aligned.
 - Filter SEVIR events to tiles that overlap Florida, then supplement with MRMS archives from two or three summers (June–September) for Florida-only training.
 - Tag every dataset with its timestamp and whether it is live, historical replay or simulated. The interface shows all three labels.
 
@@ -299,7 +299,7 @@ This is the novel part. The learned rates from Step 5 drive a stochastic cellula
 
 ### The state
 
-The grid is the 0.02° Florida grid from Step 1 (about 2 km), 324 × 376 ≈ 1.2 × 10⁵ cells. Each cell is in one of three states, an excitable-medium model in the family of the Greenberg–Hastings automaton:
+The grid is the 0.02° Florida grid from Step 1 (about 2 km), 360 × 456 ≈ 1.6 × 10⁵ cells. Each cell is in one of three states, an excitable-medium model in the family of the Greenberg–Hastings automaton:
 
 | State | Meaning | Analog in excitable media (BZ reaction) |
 | --- | --- | --- |
@@ -572,6 +572,8 @@ What was decided while building, and why. Newest last; add a row for each change
 | 2026-11-15 | NOTAM API requested from the FAA NOTAM Service Center (7-AWA-NAIMES@faa.gov); fallback: saved NOTAM text labeled as sample | access is by request, not self-serve |
 | 2026-11-15 | 0.02° lat/lon grid (MRMS 0.01° coarsened by exact 2×2 block max) replaces EPSG:5070; box 24.52–31.00° N, 87.52–80.00° W; grid.py owns every km conversion | every cell is the max of exactly 4 pixels; no reprojection; north-aligned; web overlay needs only a 1-D row warp. Cost: cells 2.22 km × 1.91–2.03 km, area varies 6% by row, handled in grid.py (docs/structure-review.md) |
 | 2026-11-15 | Storm day = 10:00 to 10:00 UTC, named by its start date; one frames file per storm day | Florida's evening storms cross 00 UTC; splitting by UTC date would cut a storm cycle across splits |
+| 2026-11-16 | Box widened to 23.80–31.00° N, 87.52–78.40° W (90 × 114 blocks, 360 × 456 cells); evaluation region = domain minus 72 km | the old east edge (80.00° W) sat on the Atlantic coast and the south edge on the Keys, so storms moving in from offshore would have been labelled births. 72 km = 15 m/s × 80 min (60 min lead + 20 min quiet window). −78.40 is near the limit of useful offshore radar coverage |
+| 2026-11-16 | Days fixed by rule in config/days.yaml before any model: train Jun–Aug 2022–24 and validation Jun–Aug 2025 every 2nd day; test Jun–Aug 2026 every 3rd day; replay days are test days chosen by observed storms | split by whole summers so no weather system spans two splits; newest summer as test matches the live system |
 
 ## Sources
 

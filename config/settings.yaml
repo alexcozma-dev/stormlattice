@@ -2,11 +2,11 @@
 
 grid:
   # Florida box (degrees) on MRMS's own 0.01 deg lat/lon grid. No reprojection.
-  # Each span must be a whole number of 0.08 deg blocks: 6.48 deg = 81 blocks, 7.52 deg = 94.
-  lat_min: 24.52
+  # Each span must be a whole number of 0.08 deg blocks: 7.20 deg = 90 blocks, 9.12 deg = 114.
+  lat_min: 23.80
   lat_max: 31.0
   lon_min: -87.52
-  lon_max: -80.0
+  lon_max: -78.40
 
 archive:
   cadence_min: 10                 # one slot per 10-minute mark
@@ -24,6 +24,7 @@ labels:
   # tune: equals headroom_distance_km so the headroom test measures the label ceiling;
   # revisit after the label sanity check
   advected_tolerance_km: 10
+  edge_margin_km: 72              # 15 m/s x 80 min: storms from outside can't reach the scored region
 
 checks:
   headroom_distance_km: 10        # "new" storm area lies farther than this from the advected t0 storms

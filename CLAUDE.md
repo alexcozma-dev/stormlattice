@@ -83,8 +83,8 @@ plain mv and rm so nothing is staged.
   2 km. Block = 0.08 deg = 4 x 4 cells, about 8 km. Use these three words exactly.
 - Say "0.02 deg cells, about 2 km" and "0.08 deg blocks, about 8 km". Never
   "the 2 km grid" or "8 km blocks".
-- No reprojection. Arrays are (ny, nx), row 0 north, column 0 west: 324 x 376
-  cells, 81 x 94 blocks.
+- No reprojection. Arrays are (ny, nx), row 0 north, column 0 west: 360 x 456
+  cells, 90 x 114 blocks.
 - grid.py owns every km-to-pixel conversion. No other module multiplies by 2 or
   calls a cosine.
 - Areas are sums of cell areas, not pixel counts. Cells shrink about 6% from

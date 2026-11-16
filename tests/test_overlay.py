@@ -35,7 +35,7 @@ def test_row_count_uses_every_source_row():
 
 
 def test_florida_box_rows():
-    rows = overlay.mercator_rows(24.52, 31.0, ny=324)       # the box in settings.yaml
+    rows = overlay.mercator_rows(24.52, 31.0, ny=324)       # an example box (the original one)
     assert rows[0] == 0 and rows[-1] == 323
     assert set(np.diff(rows).tolist()) == {0, 1}            # north to south, no source row skipped
     # Mercator stretches the north, so the middle of the image lies north of the middle latitude.

@@ -73,7 +73,7 @@ def load_cells(key, grib_dir, fs=None):
     """Download one MRMS frame, crop it, coarsen to 0.02 deg cells, delete the GRIB: (ny, nx) float32."""
     grib_path = mrms.download(key, grib_dir, fs=fs)
     try:
-        pixels = mrms.load_florida(grib_path).values        # (648, 752) dBZ; NaN = no radar coverage
+        pixels = mrms.load_florida(grib_path).values        # (720, 912) dBZ; NaN = no radar coverage
     finally:
         grib_path.unlink(missing_ok=True)                   # runs even if loading failed
     return grid.block_max(pixels, grid.PIXELS_PER_CELL).astype(np.float32)
