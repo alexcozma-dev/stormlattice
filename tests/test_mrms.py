@@ -3,6 +3,7 @@ import os
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from conftest import FakeFS
 
 from stormlattice import mrms
 from stormlattice.mrms import frame_time, latest_key
@@ -16,15 +17,6 @@ def test_frame_time_from_key():
 def test_frame_time_from_decompressed_name():
     name = "MRMS_MergedReflectivityQCComposite_00.50_20261112-180839.grib2"
     assert frame_time(name).hour == 18
-
-class FakeFS:
-    """Stands in for S3 in tests: a dict of folder -> list of entries."""
-
-    def __init__(self, tree):
-        self.tree = tree
-
-    def ls(self, path):
-        return self.tree.get(path, [])
 
 ROOT = "noaa-mrms-pds/CONUS/P"
 

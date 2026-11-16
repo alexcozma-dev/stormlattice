@@ -42,7 +42,8 @@ def slot_times(day, start_hour_utc, cadence_min):
     """
     The 10-minute marks of one storm day, as timezone-aware UTC datetimes.
 
-    `day` is the storm day's name, "YYYYMMDD". The day runs from start_hour_utc on that date to the same hour the next day, so it has 24 * 60 / cadence_min slots.
+    `day` is the storm day's name, "YYYYMMDD". The day runs from start_hour_utc on that date 
+    to the same hour the next day, so it has 24 * 60 / cadence_min slots.
     """
     start = day_start(day, start_hour_utc)
     n_slots = 24 * 60 // cadence_min
@@ -79,8 +80,17 @@ def load_cells(key, grib_dir, fs=None):
     return grid.block_max(pixels, grid.PIXELS_PER_CELL).astype(np.float32)
 
 def fetch_day(day, frames_dir, grib_dir, *, start_hour_utc, cadence_min, max_offset_min, fs=None):
-    """Fetch one storm day into frames_dir/<day>.npz and return the path. A day already on disk is skipped."""
+    """
+    Fetch one storm day into frames_dir/<day>.npz and return the path. A day already on disk is skipped.
+
+    An all-NaN slot means no usable data: either no frame within max_offset_min, or a frame that is
+    blank over the whole box. Test for it with np.isnan(dbz).all(axis=(1, 2)), never with the times.
+    Slot 0 looks forward only: frames before the day's start are not listed. A day with no frames at
+    all raises ValueError and writes nothing.
+    """
     out = Path(frames_dir) / f"{day}.npz"
+    grib_dir = Path(grib_dir)
+    out.parent.mkdir(parents=True, exist_ok=True)       # before 144 downloads, not after
     if out.exists():
         return out
     slots = slot_times(day, start_hour_utc, cadence_min)
