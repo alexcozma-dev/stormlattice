@@ -1,0 +1,7 @@
+# The build context is the repo root, which also holds data/, .venv/ and .env.
+# Send nothing to the build except what the Dockerfile copies.
+*
+!docker/requirements-api.txt
+!stormlattice
+!config
+**/__pycache__

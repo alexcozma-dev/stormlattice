@@ -1,0 +1,8 @@
+# What the API container installs: only what stormlattice/api/app.py and stormlattice/config.py import.
+# The full runtime list is ../requirements.txt; keep the lower bounds here the same as there.
+# When an endpoint starts importing numpy, httpx or a pipeline module, add that package here too.
+
+fastapi>=0.115
+uvicorn>=0.30         # plain uvicorn: the [standard] extras (uvloop, httptools, watchfiles) are not needed
+python-dotenv>=1.0
+pyyaml>=6.0

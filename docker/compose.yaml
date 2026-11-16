@@ -4,11 +4,17 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    env_file: ../.env
+    env_file:
+      - path: ../.env           # lives only on the VM; the API starts without it
+        required: false
+    environment:
+      STORM_DATA_DIR: /data     # the volume below, whatever .env says
     ports:
       - "127.0.0.1:8000:8000"   # only nginx on the host can reach it
     volumes:
       - storm-data:/data
+      - ../web:/app/web:ro      # the app mounts web/ at "/" and will not start without the directory
+    mem_limit: 512m             # the VM has 2 GB; the API idles far below this
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]

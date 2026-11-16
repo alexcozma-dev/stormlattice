@@ -71,6 +71,30 @@ uvicorn stormlattice.api.app:app --reload
 # open http://127.0.0.1:8000/ (the page) or http://127.0.0.1:8000/health
 ```
 
+## Deploy
+
+The demo runs on one GCP VM (e2-small, 2 GB RAM) behind Cloudflare; `ssh storm` reaches it. nginx on
+the VM terminates TLS, serves `web/` straight from the checkout and proxies `/api/` and `/health` to
+the API container on `127.0.0.1:8000`. The container installs only `docker/requirements-api.txt`,
+not the pipeline packages.
+
+```bash
+# on the VM: git pull, rebuild and restart the container, wait for /health
+~/stormlattice/deploy/deploy.sh
+
+# from the laptop: replay files are not in git, so copy the day list and each day's folder
+rsync -av web/replay/days.json web/replay/20220601 storm:stormlattice/web/replay/
+
+# on the VM, only when deploy/nginx/storm.conf changed
+sudo cp ~/stormlattice/deploy/nginx/storm.conf /etc/nginx/sites-available/storm
+sudo nginx -t && sudo systemctl reload nginx
+
+# from anywhere
+curl https://storm.alexcozma.dev/health
+```
+
+Keys live in `~/stormlattice/.env` on the VM only. The API starts without that file.
+
 ## Data sources
 
 All public and free:
