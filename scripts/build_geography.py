@@ -32,6 +32,7 @@ PLACES = [
 
 def cell_of(lat: float, lon: float, lat_max: float, lon_min: float) -> tuple[int, int]:
     """Row and column of the cell that contains a point."""
+    # TODO: this lon/lat -> cell conversion moves to the lon/lat <-> cell helper planned for grid.py.
     return int((lat_max - lat) / grid.CELL_DEG), int((lon - lon_min) / grid.CELL_DEG)
 
 

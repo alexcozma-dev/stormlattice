@@ -46,6 +46,9 @@ route:
   suntrax_lonlat: [-81.82897, 28.11423]   # SunTrax Blvd, Auburndale, FL 33823
   mco_lonlat: [-81.31046, 28.42444]       # 1 Jeff Fuqua Blvd, Orlando, FL 32827
   cruise_speed_kmh: 241                   # about 150 mph
+  # Departure window: minutes after the issue time. The last departure (+40) plus the 15-minute
+  # flight lands at +55, inside the 60-minute forecast horizon (forecast.lead_times_min).
+  departures_min: [0, 10, 20, 30, 40]
 
 data:
   mrms_bucket: "noaa-mrms-pds"

@@ -8,6 +8,8 @@
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <style>
     * { box-sizing: border-box; }
+    /* Without this, a rule that sets display (.tag, .risk-row) would un-hide a hidden element. */
+    [hidden] { display: none !important; }
     html, body { height: 100%; }
     body { margin: 0; display: flex; flex-direction: column; font-family: system-ui, sans-serif;
            font-size: 14px; background: #0f1419; color: #e6e6e6; }
@@ -49,6 +51,26 @@
            border-radius: 4px; color: #f0c040; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; }
     .todo { color: #f0c040; }
     .muted { color: #8a8f96; }
+    /* Route card. Status colours are used for the marks only; the words stay in the text colour. */
+    :root { --green: #0ca30c; --amber: #fab219; --red: #d03b3b; --unavailable: #5b6470; }
+    #route-observed { margin: 4px 0 10px; font-size: 16px; }
+    .risk-row { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
+    #route-risk { font-size: 44px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
+    .level { display: flex; align-items: center; gap: 8px; font-weight: 700; letter-spacing: 0.06em; }
+    .level i { width: 14px; height: 14px; border-radius: 50%; background: var(--unavailable); }
+    .level[data-level="green"] i { background: var(--green); }
+    .level[data-level="amber"] i { background: var(--amber); border-radius: 2px; transform: rotate(45deg); }
+    .level[data-level="red"] i { background: var(--red); border-radius: 2px; }
+    h3 { margin: 12px 0 4px; font-size: 13px; font-weight: 600; }
+    #window-chart { display: block; width: 100%; max-width: 340px; height: auto; }
+    #window-chart text { font-size: 10px; fill: #8a8f96; font-variant-numeric: tabular-nums; }
+    /* The halo keeps a value readable where it sits on a threshold line. */
+    #window-chart text.value { fill: #e6e6e6; paint-order: stroke; stroke: #0f1419; stroke-width: 3px; }
+    #window-chart .grid { stroke: #2a2f36; stroke-width: 1; }
+    #window-chart .axis { stroke: #3a4049; stroke-width: 1; }
+    #window-chart .threshold { stroke: #c9ccd1; stroke-width: 1; stroke-dasharray: 3 3; }
+    #window-chart .slot { fill: transparent; }
+    #window-chart .slot:hover { fill: rgba(255, 255, 255, 0.06); }
     #legend { display: flex; }
     #legend div { flex: 1; text-align: left; font-size: 10px; color: #8a8f96; }
     #legend i { display: block; height: 10px; margin-bottom: 2px; }
@@ -92,6 +114,22 @@
 
     <aside>
       <section>
+        <h2>Route card</h2>
+        <span class="tag" id="route-tag" hidden></span>
+        <p id="route-observed" hidden></p>
+        <div class="risk-row" id="route-risk-row">
+          <span id="route-risk">--</span>
+          <span class="level" id="route-level" data-level="unavailable"><i></i><span id="route-level-word">-</span></span>
+        </div>
+        <p id="route-reason">-</p>
+        <div id="route-window" hidden>
+          <h3 id="window-title">Departure window</h3>
+          <svg id="window-chart" viewBox="0 0 308 156" role="img" aria-label="Route risk by departure time"></svg>
+        </div>
+        <p class="muted" id="route-note"></p>
+        <p class="muted" id="route-settings"></p>
+      </section>
+      <section>
         <h2>Data shown</h2>
         <dl>
           <dt>Radar</dt><dd id="data-source">-</dd>
@@ -123,7 +161,8 @@
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
     // Everything shown comes from static files written by scripts/build_replay.py:
-    //   replay/days.json, replay/<YYYYMMDD>/index.json, obs_<HHMM>.png, briefing.json
+    //   replay/days.json, replay/<YYYYMMDD>/index.json, obs_<HHMM>.png, route_<HHMM>.json,
+    //   briefing.json
     // so the page works from nginx alone, with the API down. Paths are relative on purpose.
     // All times are UTC and are shown exactly as index.json gives them (no Date objects, so the
     // browser's time zone can never leak in).
@@ -133,6 +172,8 @@
                           simulated: "simulated data, not real weather" };
     const EMPTY_IMAGE = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
     const PLAY_STEP_MS = 300;
+    const LEVEL_WORD = { green: "GREEN", amber: "AMBER", red: "RED", unavailable: "UNAVAILABLE" };
+    const LEVEL_COLOUR = { green: "var(--green)", amber: "var(--amber)", red: "var(--red)" };
 
     const el = id => document.getElementById(id);
     const dateOf = iso => iso.slice(0, 10);           // "2022-06-01T18:00:38Z" -> "2022-06-01"
@@ -239,6 +280,7 @@
         el("count").textContent = "frame " + (current + 1) + " of " + frames.length;
         el("noframe").hidden = Boolean(frame.obs);
         el("data-valid").textContent = frame.obs ? dateOf(frame.time_utc) + " " + timeOf(frame.time_utc) : "no frame";
+        showRoute(base, frame);
       }
 
       function setPlaying(on) {
@@ -257,6 +299,138 @@
         if (frame.obs) new Image().src = base + frame.obs;
       }
       show(0);
+    }
+
+    // The route card follows the time slider: each frame has its own route_<HHMM>.json. A file is
+    // fetched once and kept. During playback an older answer can arrive after a newer one, so a
+    // card is only drawn if its frame is still the one on screen.
+    const routeFiles = new Map();
+    let routeOnScreen = null;
+
+    async function showRoute(base, frame) {
+      const name = frame.route;
+      routeOnScreen = name;
+      if (!name) { drawRoute(null); return; }
+      try {
+        if (!routeFiles.has(name)) routeFiles.set(name, getJson(base + name));
+        const card = await routeFiles.get(name);
+        if (routeOnScreen === name) drawRoute(card);
+      } catch (error) {
+        routeFiles.delete(name);
+        if (routeOnScreen === name) drawRoute(null);
+      }
+    }
+
+    const percent = risk => Math.round(risk * 100) + "%";
+
+    // "method" in the route file decides what the card may show. "persistence" holds the observed
+    // frame fixed: that is not a forecast, so it gets no risk %, no green / amber / red and no
+    // departure window, only "storms near the corridor: yes / no" in the text colour. Any other
+    // method is a forecast and gets the full card. Unavailable looks the same for both.
+    function drawRoute(card) {
+      if (card && !card.method) card = null;      // a file from an older build: ask for a rebuild
+      const observedOnly = Boolean(card) && card.method === "persistence";
+      const unavailable = !card || card.level === "unavailable";
+      const hasWindow = Boolean(card) && !observedOnly && Array.isArray(card.departures);
+      el("route-tag").hidden = !card || !card.label;
+      el("route-observed").hidden = !observedOnly || unavailable;
+      el("route-risk-row").hidden = observedOnly && !unavailable;
+      el("route-risk").hidden = observedOnly;
+      el("route-reason").hidden = observedOnly && !unavailable;
+      el("route-window").hidden = !hasWindow;
+      el("window-chart").replaceChildren();
+      if (!card) {
+        el("route-risk").textContent = "--";
+        el("route-level").dataset.level = "unavailable";
+        el("route-level-word").textContent = "NO ROUTE FILE";
+        el("route-reason").textContent = "No route card was built for this time. Rebuild the replay: " +
+          "python scripts/build_replay.py <YYYYMMDD>";
+        el("route-note").textContent = "";
+        el("route-settings").textContent = "";
+        return;
+      }
+      el("route-tag").textContent = card.label || "";
+      el("route-level").dataset.level = card.level;
+      el("route-level-word").textContent = LEVEL_WORD[card.level] || "UNKNOWN";
+      el("route-reason").textContent = card.reason || "";
+      el("route-note").textContent = card.note || "";
+      // An unavailable card says only that, and why: the method's note and the settings line
+      // would describe a radar frame that is not there.
+      el("route-note").hidden = unavailable;
+      const noRadar = "No usable radar within " + card.buffer_km + " km of the route at " +
+        card.issue_time_utc.slice(11, 16) + " UTC.";
+      // No buffer control exists yet, so the card does not call the buffer adjustable.
+      const buffer = "Buffer " + card.buffer_km + " km (set in config; an operator control is future work). ";
+      const flight = "Flight " + card.route_km + " km, " + card.flight_min + " min.";
+      if (observedOnly) {
+        const answer = document.createElement("b");
+        answer.textContent = card.storms_near_route ? "yes" : "no";
+        el("route-observed").replaceChildren("Storms within " + card.buffer_km +
+          " km of the corridor in the latest frame: ", answer);
+        el("route-settings").textContent = unavailable ? noRadar :
+          "Radar frame " + timeOf(card.issue_time_utc) + ". Storm cell: " +
+          card.storm_threshold_dbz + " dBZ or more. " + buffer + flight;
+        return;
+      }
+      el("route-risk").textContent = card.risk === null ? "--" : percent(card.risk);
+      const t = card.thresholds;
+      // The thresholds count as placeholders unless the file says "placeholder": false.
+      el("route-settings").textContent = unavailable ? noRadar : buffer +
+        "Dashed lines: green below " + percent(t.green_below) + ", red above " + percent(t.red_above) +
+        (t.placeholder === false ? ". " :
+          " (placeholder thresholds, set in config; an operator control is future work). ") + flight;
+      if (hasWindow) {
+        el("window-title").textContent = "Departure window, leaving in the next " +
+          card.departures[card.departures.length - 1].offset_min + " min";
+        drawWindow(card);
+      }
+    }
+
+    // Departure-window chart: one column per departure, risk 0 to 100% on one axis.
+    function drawWindow(card) {
+      const svg = el("window-chart");
+      const W = 308, left = 30, right = 6, top = 16, bottom = 126;      // plot box, in viewBox units
+      const y = risk => bottom - risk * (bottom - top);
+      const add = (tag, attrs, text) => {
+        const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+        for (const key in attrs) node.setAttribute(key, attrs[key]);
+        if (text !== undefined) node.textContent = text;
+        svg.append(node);
+        return node;
+      };
+
+      for (const tick of [0.5, 1]) add("line", { class: "grid", x1: left, x2: W - right, y1: y(tick), y2: y(tick) });
+      for (const tick of [0, 0.5, 1]) add("text", { x: left - 6, y: y(tick) + 3, "text-anchor": "end" }, percent(tick));
+
+      const slot = (W - left - right) / card.departures.length, barWidth = 20;
+      const columns = card.departures.map((d, i) => ({ d, centre: left + (i + 0.5) * slot,
+        time: d.depart_utc.slice(11, 16), known: d.risk !== null }));
+      for (const { d, centre, known } of columns) {
+        if (known && d.risk > 0) {
+          // Rounded at the top, square on the baseline.
+          const x0 = centre - barWidth / 2, x1 = centre + barWidth / 2, yTop = y(d.risk);
+          const r = Math.min(4, bottom - yTop);
+          add("path", { fill: LEVEL_COLOUR[d.level], d: "M" + x0 + "," + bottom + " V" + (yTop + r) +
+            " Q" + x0 + "," + yTop + " " + (x0 + r) + "," + yTop + " H" + (x1 - r) +
+            " Q" + x1 + "," + yTop + " " + x1 + "," + (yTop + r) + " V" + bottom + " Z" });
+        }
+      }
+      // The threshold lines go over the bars, so they stay visible on a full-height bar.
+      for (const level of [card.thresholds.green_below, card.thresholds.red_above])
+        add("line", { class: "threshold", x1: left, x2: W - right, y1: y(level), y2: y(level) });
+      for (const { d, centre, time, known } of columns) {
+        add("text", { class: "value", x: centre, y: (known ? y(d.risk) : bottom) - 4, "text-anchor": "middle" },
+            known ? percent(d.risk) : "n/a");
+        add("text", { x: centre, y: bottom + 14, "text-anchor": "middle" }, time);
+        // A full-height hover area, larger than the bar, with the exact reading as its tooltip.
+        const hit = add("rect", { class: "slot", x: centre - slot / 2, y: 0, width: slot, height: bottom });
+        const tip = document.createElementNS("http://www.w3.org/2000/svg", "title");
+        tip.textContent = "Leave " + time + " UTC (+" + d.offset_min + " min): " +
+          (known ? percent(d.risk) + ", " + d.level : "unavailable, treat as no-go");
+        hit.append(tip);
+      }
+      add("line", { class: "axis", x1: left, x2: W - right, y1: bottom, y2: bottom });
+      add("text", { x: left, y: bottom + 26, "text-anchor": "start" }, "departure, UTC");
     }
 
     async function showBriefing(base) {

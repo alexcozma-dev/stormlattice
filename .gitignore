@@ -221,3 +221,9 @@ __marimo__/
 .env
 .idea/
 *:Zone.Identifier
+
+# Replay files written by scripts/build_replay.py. Nothing here is tracked yet. When replay days
+# are chosen, add !web/replay/days.json and one !web/replay/<YYYYMMDD>/ line per day, together.
+# The pattern is web/replay/* and not web/replay/: git cannot re-include a file whose parent
+# directory is excluded.
+web/replay/*
